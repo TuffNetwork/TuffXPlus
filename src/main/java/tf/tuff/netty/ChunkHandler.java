@@ -126,7 +126,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
         if (!viaReady) {
             requestViaCache(chunkX, chunkZ, key);
         }
-        if (!y0Ready && y0 != null) {
+        if (!y0Ready) {
             requestY0Cache(chunkX, chunkZ, key);
         }
 
