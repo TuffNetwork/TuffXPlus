@@ -123,7 +123,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
         q.y0Data = y0Data;
         queue.put(key, q);
 
-        if (!viaReady && viaBlocks != null) {
+        if (!viaReady) {
             requestViaCache(chunkX, chunkZ, key);
         }
         if (!y0Ready && y0 != null) {
