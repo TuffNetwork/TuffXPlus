@@ -54,8 +54,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     public void onEnable() {
         PacketEvents.getAPI().init();
 
-        
-
         if (getConfig().getBoolean("y0-enabled",true)) {
             y0Plugin.onTuffXEnable();
         }
@@ -85,6 +83,11 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         PacketEvents.getAPI().getEventManager().registerListener(
             new NetworkListener(this), PacketListenerPriority.NORMAL
         );
+
+        getServer().getMessenger().registerIncomingPluginChannel(this, "eagler:below_y0", this);
+        getServer().getMessenger().registerIncomingPluginChannel(this, "viablocks:handshake", this);
+        getServer().getMessenger().registerIncomingPluginChannel(this, "eagler:tuffactions", this);
+        getServer().getMessenger().registerIncomingPluginChannel(this, "entities:handshake", this);     
 
         getServer().getPluginManager().registerEvents(this, this);
 
@@ -116,6 +119,8 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         }
 
         PacketEvents.getAPI().terminate();
+
+        getServer().getMessenger().unregisterIncomingPluginChannel(this);
     }
 
     public void reloadTuffX(){

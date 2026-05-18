@@ -265,6 +265,9 @@ public class Y0Plugin {
     }
 
     public void setChunkInjector(tf.tuff.netty.ChunkInjector injector) {
+        if (injector == null) {
+            return;
+        }
         this.chunkInjector = injector;
     }
 
