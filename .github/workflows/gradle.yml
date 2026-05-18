@@ -49,20 +49,3 @@ jobs:
           fi
           git commit -m "Update build artifact"
           git push
-
-      - name: Deploy to Testers Repo
-        env:
-          TOKEN: ${{ secrets.VERSION_REPO_TOKEN }}
-        run: |
-          git clone https://x-access-token:${TOKEN}@github.com/tuffnetwork/testers.git deploy_repo
-          cd deploy_repo
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-
-          mkdir -p plugin-builds
-          cp -r ../builds/* "plugin-builds/"
-          
-
-          git add .
-          git commit -m "Upload build wowowow" || echo "No changes"
-          git push
