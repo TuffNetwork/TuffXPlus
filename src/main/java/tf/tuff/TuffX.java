@@ -92,7 +92,7 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         getServer().getPluginManager().registerEvents(this, this);
 
         setupRegistry();
-        checkForUpdates();
+        getUpdates();
         lfe();
     }
 
