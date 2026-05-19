@@ -46,7 +46,7 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
-    testImplementation 'com.github.seeseemelk:MockBukkit-v1.20:3.86.0'
+    testImplementation 'be.seeseemelk:mockbukkit:1.19.4-R0.1-SNAPSHOT'
 }
 
 processResources {
