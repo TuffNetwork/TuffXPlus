@@ -44,6 +44,9 @@ dependencies {
     
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testImplementation 'com.github.seeseemelk:MockBukkit-v1.20:3.86.0'
 }
 
 processResources {
@@ -79,4 +82,20 @@ tasks.named('jar') {
 
 tasks.named('build') {
     dependsOn shadowJar
+}
+
+test {
+    useJUnitPlatform()
+
+    // Print test results to console
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat "full"
+    }
+}
+
+// Ensure Java 21 source/target compatibility
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
