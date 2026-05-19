@@ -84,11 +84,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
             new NetworkListener(this), PacketListenerPriority.NORMAL
         );
 
-        getServer().getMessenger().registerIncomingPluginChannel(this, "eagler:below_y0", this);
-        getServer().getMessenger().registerIncomingPluginChannel(this, "viablocks:handshake", this);
-        getServer().getMessenger().registerIncomingPluginChannel(this, "eagler:tuffactions", this);
-        getServer().getMessenger().registerIncomingPluginChannel(this, "entities:handshake", this);     
-
         getServer().getPluginManager().registerEvents(this, this);
 
         setupRegistry();
