@@ -60,13 +60,12 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         PacketEvents.getAPI().init();
 
         y0Plugin.onTuffXEnable();
+        tuffActions.onTuffXEnable();
         viaBlocksPlugin.onTuffXEnable();
         viaEntitiesPlugin.onTuffXEnable();
         chunkInjector = new ChunkInjector(viaBlocksPlugin.blockListener, y0Plugin);
         viaBlocksPlugin.blockListener.setChunkInjector(chunkInjector);
         y0Plugin.setChunkInjector(chunkInjector);
-    
-        tuffActions.onTuffXEnable();
         
         saveDefaultConfig();
         getConfig().options().copyDefaults(true);
@@ -287,7 +286,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     }
 
     private void lfe() {
-        
         getLogger().info("");
         getLogger().info("████████╗██╗   ██╗███████╗ ███████╗ ██╗  ██╗");
         getLogger().info("╚══██╔══╝██║   ██║██╔════╝ ██╔════╝ ╚██╗██╔╝");
