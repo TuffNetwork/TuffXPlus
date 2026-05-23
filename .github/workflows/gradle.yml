@@ -66,4 +66,3 @@ jobs:
           git add .
           git commit -m "Upload build wowowow" || echo "No changes"
           git push
-
