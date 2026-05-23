@@ -1,5 +1,5 @@
 #  \\//  //=\\
-#   ||  ||   ||
+#   ||  || - ||
 #   ||   \\=//
 
 y0:
@@ -38,9 +38,9 @@ registry:
   server: 'wss://urserverip.net'
 
 
-#\\    // <>   //\\   ||\\ ||    //=\\   //= ||//   //=
-# \\  //  ||  //==\\  ||<< ||   ||   || ||   ||\\   \\
-#  \\//   || //    \\ ||// ||==  \\=//   \\= || \\ =//
+# \\    // <>   //\\   ||\\ ||    //=\\   //= ||//   //=
+#  \\  //  ||  //==\\  ||<< ||   ||   || ||   ||\\   \\
+#   \\//   || //    \\ ||// ||==  \\=//   \\= || \\ =//
 
 viablocks:
   viablocks-enabled: true
@@ -58,9 +58,9 @@ viablocks:
   sync-mode: normal
 
 
-#\\    // <>   //\\   ||=== ||\ || ==== <> ==== <> ||===  //=
-# \\  //  ||  //==\\  ||=== ||\\||  ||  ||  ||  || ||===  \\
-#  \\//   || //    \\ ||=== || \||  ||  ||  ||  || ||=== =//
+# \\    // <>   //\\   ||== ||\ || ==== <> ==== <> ||==  //=
+#  \\  //  ||  //==\\  ||== ||\\||  ||  ||  ||  || ||==  \\
+#   \\//   || //    \\ ||== || \||  ||  ||  ||  || ||== =//
 
 viaentities:
   viaentities-enabled: true
@@ -72,29 +72,23 @@ viaentities:
   max-distance: -1'
 
 
-# //=\\ ==== ||  || ||== ||\\
-#||   || ||  ||==|| ||== ||//
-# \\=//  ||  ||  || ||== ||\\
+#  ==== ||   || ||== ||==  //\\   //= ==== <>  //=\\  ||\ ||  //=
+#   ||  ||   || ||== ||== //==\\ ||    ||  || ||   || ||\\||  \\
+#   ||   \\=//  ||   ||  //    \\ \\=  ||  ||  \\=//  || \|| =//
 
 # 1.13+ swimming
 swimming:
   enabled: true
+  debug: false
 
 # Allows players to see 1.13+ things in the creative menu
 creative-items:
   enabled: true
+  debug: false
 
 restrictions:
-  enabled: false
+  enabled: true
+  debug: false
   # What TuffClient modules are not allowed
   disallow:
-    - quickelytra
-    - fastcrystals
-    - hotbar_switcher
-    - fullbright
-    - tnt
-    - antipickup
-    - zoom
-    - glowingores
-    - rangecrosshair
-    - minimap
+    - clientbrand

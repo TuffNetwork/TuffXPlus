@@ -21,12 +21,10 @@ public class Restrictions extends TuffActionBase {
     private RestrictionsCommand commandHandler;
 	private Set<String> disallowed = ConcurrentHashMap.newKeySet();
 
-	private static final List<String> example = List.of(
-		"quickelytra", "fastcrystals", "hotbar_switcher", "fullbright", "tnt", "antipickup", "zoom", "glowingores", "rangecrosshair", "minimap"
-	);
+	private static final List<String> example = List.of("clientbrand");
 
 	public Restrictions(TuffActions plugin) {
-		super(plugin, "Restrictions", "restrictions", false);
+		super(plugin, "Restrictions", "restrictions", true);
         this.commandHandler = new RestrictionsCommand(this, plugin.plugin);
 		plugin.plugin.getConfig().addDefault("restrictions.disallow", example);
 	}
