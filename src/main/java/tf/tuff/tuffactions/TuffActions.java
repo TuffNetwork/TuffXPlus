@@ -59,8 +59,6 @@ public class TuffActions {
     }
 
     public void onTuffXEnable() {
-        PacketEvents.getAPI().init();
-
         this.swimmingManager = new Swimming(this);
         this.creativeManager = new CreativeMenu(this);
         this.restrictions = new Restrictions(this);

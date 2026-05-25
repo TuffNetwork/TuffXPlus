@@ -25,7 +25,6 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
-import com.github.retrooper.packetevents.PacketEvents;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
@@ -176,8 +175,6 @@ public class Y0Plugin {
     }
 
     public void onTuffXEnable() {
-        PacketEvents.getAPI().init();
-
         plugin.saveDefaultConfig();
         d = plugin.getConfig().getBoolean("y0.debug-mode", false);
         ObjectArrayList<String> ewList = new ObjectArrayList<>(plugin.getConfig().getStringList("y0.enabled-worlds"));
