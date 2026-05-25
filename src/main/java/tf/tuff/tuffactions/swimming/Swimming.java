@@ -36,7 +36,7 @@ public class Swimming extends TuffActionBase {
     public void handleSwimReady(Player player) {
         if (!isEnabled()) return;
         Player newPlayer = player;
-        plugin.plugin.getServer().getScheduler().runTaskLater(plugin.plugin, () -> {
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             for (UUID swimmingPlayerId : swimmingPlayers) {
                 Player swimmingPlayer = Bukkit.getPlayer(swimmingPlayerId);
                 if (swimmingPlayer != null && swimmingPlayer.isOnline()) {
@@ -117,7 +117,7 @@ public class Swimming extends TuffActionBase {
             out.writeLong(subject.getUniqueId().getLeastSignificantBits());
             out.writeBoolean(isSwimming);
 
-            plugin.sendPluginMessage(recipient, bout.toByteArray());
+            actsPlugin.sendPluginMessage(recipient, bout.toByteArray());
         } catch (IOException e) {
             debug("Failed to send swim state to " + recipient.getName(), e);
         }

@@ -25,9 +25,9 @@ public class CreativeMenu extends TuffActionBase {
 
     private final TabUtil tabUtil;
 
-    public CreativeMenu(TuffActions plugin) {
-        super(plugin, "Creative Items", "creative-items", true);
-        this.tabUtil = new TabUtil(plugin);
+    public CreativeMenu(TuffActions actsPlugin) {
+        super(actsPlugin, "Creative Items", "creative-items", true);
+        this.tabUtil = new TabUtil(actsPlugin);
     }
 
     @Override
@@ -64,7 +64,7 @@ public class CreativeMenu extends TuffActionBase {
                 out.writeUTF(category != null ? category : "");
             }
 
-            plugin.sendPluginMessage(player, bout.toByteArray());
+            actsPlugin.sendPluginMessage(player, bout.toByteArray());
         } catch (IOException e) {
             debug("Failed to send creative items to " + player.getName(), e);
         }
@@ -99,7 +99,7 @@ public class CreativeMenu extends TuffActionBase {
             InventoryAction action = event.getAction();
             if (action == InventoryAction.PLACE_ALL || action == InventoryAction.PLACE_ONE || action == InventoryAction.SWAP_WITH_CURSOR) {
 
-                Bukkit.getScheduler().runTaskLater(this.plugin.plugin, () -> {
+                Bukkit.getScheduler().runTaskLater(plugin, () -> {
                     ItemStack realItemStack = playerHoldingPlaceholder.get(playerUUID);
 
                     if (realItemStack != null && event.getClickedInventory() != null) {
