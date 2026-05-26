@@ -88,7 +88,7 @@ public class CustomBlockListener {
     }
 
     public void setChunkInjector(tf.tuff.netty.ChunkInjector injector) {
-        if (injector == null) { return; }
+        if (injector == null) return;
         this.chunkInjector = injector;
     }
 

@@ -38,9 +38,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     public String latestAvailableVersion = null;
 
     private ChunkInjector chunkInjector;
-    private static final String CURRENT_VERSION = "1.0.0-patch";
-    private static final String BUILDS_API_URL = "https://api.github.com/repos/Trainboy15/TuffXPlus/contents/builds";
-
 
     @Override
     public void onLoad() {
@@ -150,25 +147,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         return true;
     }
 
-
-    // Simple version comparator — handles semver-style and suffix strings
-    private int compareVersions(String a, String b) {
-        // Strip non-numeric suffixes for comparison (e.g. "1.0.0-patch" → "1.0.0")
-        String[] partsA = a.replaceAll("-.*", "").split("\\.");
-        String[] partsB = b.replaceAll("-.*", "").split("\\.");
-        int len = Math.max(partsA.length, partsB.length);
-        for (int i = 0; i < len; i++) {
-            int numA = i < partsA.length ? parseIntSafe(partsA[i]) : 0;
-            int numB = i < partsB.length ? parseIntSafe(partsB[i]) : 0;
-            if (numA != numB) return Integer.compare(numA, numB);
-        }
-        return 0;
-    }
-
-    private int parseIntSafe(String s) {
-        try { return Integer.parseInt(s); } catch (NumberFormatException e) { return 0; }
-    }
-
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (command.getName().equalsIgnoreCase("tuffx")) return TuffXCommand(sender, command, label, args);
@@ -206,15 +184,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent e) {
         y0Plugin.handlePlayerJoin(e);
-
-        if (latestAvailableVersion != null) {
-            Player p = e.getPlayer();
-            if (p.hasPermission("tuffx.admin") || p.isOp()) {
-                p.sendMessage("§e[TuffX] §fA new version is available: §a" + latestAvailableVersion +
-                    " §f(running §c" + CURRENT_VERSION + "§f)");
-                p.sendMessage("§e[TuffX] §fDownload: §bhttps://github.com/Trainboy15/TuffXPlus/tree/main/builds");
-            }
-        }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
