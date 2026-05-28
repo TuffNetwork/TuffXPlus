@@ -38,7 +38,7 @@ dependencies {
     
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
 
-    compileOnly 'io.netty:netty-all:4.1.97.Final' 
+    compileOnly 'io.netty:netty-all:4.2.14.Final' 
 
     implementation 'org.java-websocket:Java-WebSocket:1.6.0'
     
