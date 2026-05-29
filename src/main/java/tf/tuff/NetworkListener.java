@@ -26,7 +26,7 @@ public class NetworkListener implements PacketListener {
             int chunkZ = wrapper.getColumn().getZ();
 
             World world = player.getWorld();
-            plugin.y0Plugin.cpl.handleChunk(plugin, player, world, chunkX, chunkZ);
+            plugin.y0Plugin.chunkPacketListener.handleChunk(plugin, player, world, chunkX, chunkZ);
         }
     }
 }

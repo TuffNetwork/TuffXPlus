@@ -1,180 +1,57 @@
 package tf.tuff.tuffactions;
 
-import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
-import org.bukkit.GameMode;
-import org.bukkit.command.Command;
-import org.bukkit.command.CommandSender;
-import org.bukkit.entity.Player;
-import org.bukkit.event.entity.EntityToggleGlideEvent;
-import org.bukkit.event.entity.EntityToggleSwimEvent;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
-
-import com.github.retrooper.packetevents.PacketEvents;
-import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPluginMessage;
-
 import tf.tuff.TuffX;
-import tf.tuff.tuffactions.creative.CreativeMenu;
-import tf.tuff.tuffactions.restrictions.Restrictions;
-import tf.tuff.tuffactions.swimming.Swimming;
 
-public class TuffActions {
+public abstract class TuffActionBase {
 
-    public static final String CHANNEL = "eagler:tuffactions";
+    private boolean enabled = false;
+    private boolean debugMode = false;
 
-    private Swimming swimmingManager;
-    private CreativeMenu creativeManager;
-    private Restrictions restrictions;
-    
-    public final TuffX plugin;
+    private final String name;
+    private final String configPath;
 
-    public static final Set<UUID> tuffPlayers = ConcurrentHashMap.newKeySet();
+    protected final TuffActions actsPlugin;
+    protected final TuffX plugin;
 
-    public TuffActions(TuffX plugin){
-        this.plugin = plugin;
+    public TuffActionBase(TuffActions actsPlugin, String name, String configPath, boolean defaultEnabled) {
+        this.actsPlugin = actsPlugin;
+        this.plugin = actsPlugin.plugin;
+        this.name = name;
+        this.configPath = configPath;
+        plugin.getConfig().addDefault(configPath+".enabled", defaultEnabled);
+        plugin.getConfig().addDefault(configPath+".debug", false);
     }
 
-    private void loadConfig() {
-        plugin.saveDefaultConfig();
-        info("TuffActions has been enabled");
-        info("Enabling features...");
-
-        swimmingManager.onConfigLoad();
-        creativeManager.onConfigLoad();
-        restrictions.onConfigLoad();
+    public boolean isEnabled() {
+        return enabled;
     }
 
-    public void onTuffXReload() {
-        loadConfig();
-
-        info("Misc features reloaded.");
-    }
-
-    public void onTuffXEnable() {
-        PacketEvents.getAPI().init();
-
-        this.swimmingManager = new Swimming(this);
-        this.creativeManager = new CreativeMenu(this);
-        this.restrictions = new Restrictions(this);
-
-        loadConfig();
-        info("Finished enabling features.");
-
-        plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, "eagler:tuffactions");
-        plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, "eagler:tuffactions", plugin);
-    }
-
-    public boolean onTuffXCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (command.getName().equalsIgnoreCase("restrictions")) return this.restrictions.onTuffXCommand(sender, command, label, args);
-        return true;
-    }
-
-    public void handlePacket(Player player, byte[] message) {
-        if (player == null || message == null || message.length < 13) {
-            return;
+    public void onConfigLoad() {
+        boolean wasEnabled = this.enabled;
+        this.enabled = plugin.getConfig().getBoolean(this.configPath+".enabled");
+        if (enabled) {
+            this.enable(wasEnabled);
+        } else if (wasEnabled) {
+            this.disable();
         }
-        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(message))) {
-            in.readInt();
-            in.readInt();
-            in.readInt();
-            int actionLength = in.readUnsignedByte();
-            if (actionLength == 0 || in.available() < actionLength) {
-                return;
-            }
-            byte[] actionBytes = new byte[actionLength];
-            in.readFully(actionBytes);
-            String action = new String(actionBytes, StandardCharsets.UTF_8);
-
-            tuffPlayers.add(player.getUniqueId());
-
-            if ("swimming_state".equals(action)) {
-                swimmingManager.handleSwimState(player, in.readBoolean());
-            } else if ("elytra_state".equals(action)) {
-                swimmingManager.handleElytraState(player, in.readBoolean());
-            } else if ("swim_ready".equals(action)){
-                swimmingManager.handleSwimReady(player);
-            } else if ("creative_ready".equals(action)){
-                creativeManager.handleCreativeReady(player);
-            } else if ("give_creative_item".equals(action)){
-                if (!creativeManager.isEnabled()) return;
-                if (player.getGameMode() != GameMode.CREATIVE) {
-                    return;
-                }
-                int itemLength = in.readUnsignedByte();
-                if (in.available() < itemLength + Integer.BYTES) {
-                    return;
-                }
-                byte[] itemBytes = new byte[itemLength];
-                in.readFully(itemBytes);
-                String item = new String(itemBytes, StandardCharsets.UTF_8);
-                int amount = in.readInt();
-                creativeManager.handlePlaceholderTaken(player, item, amount);
-            } else if ("pick_viablock".equals(action)){
-                if (!creativeManager.isEnabled()) return;
-                if (player.getGameMode() != GameMode.CREATIVE) {
-                    return;
-                }
-                int blockLength = in.readUnsignedByte();
-                if (in.available() < blockLength + 1) {
-                    return;
-                }
-                byte[] blockBytes = new byte[blockLength];
-                in.readFully(blockBytes);
-                String blockName = new String(blockBytes, StandardCharsets.UTF_8);
-                int hotbarSlot = in.readUnsignedByte();
-                creativeManager.handlePickViablock(player, blockName, hotbarSlot);
-            } else if ("restrictions_ready".equals(action)) {
-                restrictions.handleRestrictionsReady(player);
-            }
-        } catch (IOException e) {
-            log(Level.WARNING, "Failed to read a plugin message from " + player.getName(), e);
-        }
+        this.debugMode = plugin.getConfig().getBoolean(this.configPath+".debug");
+    }
+    protected void enable(boolean wasEnabled) {
+        actsPlugin.info(name+" enabled.");
+    }
+    protected void disable() {
+        actsPlugin.info(name+" is now disabled.");
     }
 
-    public void sendPluginMessage(Player player, byte[] payload) {
-        sendPluginMessage(player, CHANNEL, payload);
+    protected boolean isDebug() {
+        return debugMode;
     }
-
-    public void sendPluginMessage(Player player, String channel, byte[] payload) {
-        if (player == null || payload == null || !player.isOnline() || !PacketEvents.getAPI().isInitialized()) {
-            return;
-        }
-        WrapperPlayServerPluginMessage packet = new WrapperPlayServerPluginMessage(channel, payload);
-        PacketEvents.getAPI().getPlayerManager().sendPacket(player, packet);
+    protected void debug(String msg) {
+        if (debugMode) actsPlugin.log(Level.INFO, msg);
     }
-
-    public void handlePlayerQuit(PlayerQuitEvent event) {
-        swimmingManager.handleSwimQuit(event);
-        tuffPlayers.remove(event.getPlayer().getUniqueId());
-    }
-
-    public void handleToggleSwim(EntityToggleSwimEvent event) {
-        swimmingManager.handleToggleSwim(event);
-    }
-
-    public void handleToggleGlide(EntityToggleGlideEvent event) {
-        swimmingManager.handleToggleGlide(event);
-    }
-
-    public void handlePlayerInventoryClick(InventoryClickEvent event) {
-        creativeManager.onPlayerInventoryClick(event);
-    }
-
-    public void log(Level level, String msg, Throwable e) {
-        plugin.getLogger().log(level, "[TuffActions] "+msg, e);
-    }
-    public void log(Level level, String msg) {
-        plugin.getLogger().log(level, "[TuffActions] "+msg);
-    }
-    public void info(String msg) {
-        log(Level.INFO, msg);
+    protected void debug(String msg, Exception e) {
+        if (debugMode) actsPlugin.log(Level.INFO, msg, e);
     }
 }

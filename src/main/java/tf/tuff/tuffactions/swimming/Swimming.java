@@ -8,8 +8,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.event.entity.EntityToggleGlideEvent;
 import org.bukkit.event.entity.EntityToggleSwimEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
@@ -19,7 +19,6 @@ import tf.tuff.tuffactions.TuffActions;
 public class Swimming extends TuffActionBase {
 
     private final Set<UUID> swimmingPlayers = ConcurrentHashMap.newKeySet();
-    private final Set<UUID> glidingPlayers = ConcurrentHashMap.newKeySet();
 
     public Swimming(TuffActions plugin) {
         super(plugin, "Swimming", "swimming", true);
@@ -28,19 +27,17 @@ public class Swimming extends TuffActionBase {
     @Override
     protected void disable() {
         swimmingPlayers.clear();
-        glidingPlayers.clear();
         super.disable();
     }
 
     /*** CUSTOM, SERVER-BOUND PACKETS ***/
     public void handleSwimReady(Player player) {
         if (!isEnabled()) return;
-        Player newPlayer = player;
-        plugin.plugin.getServer().getScheduler().runTaskLater(plugin.plugin, () -> {
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
             for (UUID swimmingPlayerId : swimmingPlayers) {
                 Player swimmingPlayer = Bukkit.getPlayer(swimmingPlayerId);
-                if (swimmingPlayer != null && swimmingPlayer.isOnline()) {
-                    sendSwimState(newPlayer, swimmingPlayer, true);
+                if (swimmingPlayer != null && swimmingPlayer.isOnline() && player.canSee(swimmingPlayer)) {
+                    sendSwimState(player, swimmingPlayer, true);
                 }
             }
         }, 20L);
@@ -59,12 +56,7 @@ public class Swimming extends TuffActionBase {
 
     public void handleElytraState(Player player, boolean isGliding) {
         if (!isEnabled()) return;
-        if (isGliding) {
-            glidingPlayers.add(player.getUniqueId());
-        } else {
-            glidingPlayers.remove(player.getUniqueId());
-        }
-        player.setGliding(isGliding);
+        if (player.getInventory().getChestplate().getType() == Material.ELYTRA) player.setGliding(isGliding);
     }
 
     /*** EVENT HANDLERS ***/
@@ -73,27 +65,16 @@ public class Swimming extends TuffActionBase {
         if (!(event.getEntity() instanceof Player)) return;
         Player player = (Player) event.getEntity();
         if (!event.isSwimming() && swimmingPlayers.contains(player.getUniqueId())) {
-            event.setCancelled(true);
+            // event.setCancelled(true);
         }
     }
 
-    public void handleToggleGlide(EntityToggleGlideEvent event) {
-        if (!isEnabled()) return;
-        if (!(event.getEntity() instanceof Player)) return;
-        Player player = (Player) event.getEntity();
-        if (!event.isGliding() && glidingPlayers.contains(player.getUniqueId())) {
-            event.setCancelled(true);
-        }
-    }
-
-    public void handleSwimQuit(PlayerQuitEvent event) {
+    public void handlePlayerQuit(PlayerQuitEvent event) {
         if (!isEnabled()) return;
         Player player = event.getPlayer();
         if (swimmingPlayers.remove(player.getUniqueId())) {
             broadcastSwimState(player, false);
         }
-        glidingPlayers.remove(player.getUniqueId());
-        TuffActions.tuffPlayers.remove(player.getUniqueId());
     }
 
     /*** CUSTOM CLIENT-BOUND PACKETS ***/
@@ -101,7 +82,7 @@ public class Swimming extends TuffActionBase {
         for (UUID otherUUID : TuffActions.tuffPlayers) {
             if (!otherUUID.equals(subject.getUniqueId())) {
                 Player recipient = Bukkit.getPlayer(otherUUID);
-                if (recipient != null && recipient.isOnline()) {
+                if (recipient != null && recipient.isOnline() && recipient.canSee(subject)) {
                     sendSwimState(recipient, subject, isSwimming);
                 }
             }
@@ -117,7 +98,7 @@ public class Swimming extends TuffActionBase {
             out.writeLong(subject.getUniqueId().getLeastSignificantBits());
             out.writeBoolean(isSwimming);
 
-            plugin.sendPluginMessage(recipient, bout.toByteArray());
+            actsPlugin.sendPluginMessage(recipient, bout.toByteArray());
         } catch (IOException e) {
             debug("Failed to send swim state to " + recipient.getName(), e);
         }

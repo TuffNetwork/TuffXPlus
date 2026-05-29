@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'com.gradleup.shadow' version '8.3.0'
+    id 'com.gradleup.shadow' version '9.4.1'
 }
 
 group = 'tf.tuff'
@@ -24,30 +24,26 @@ repositories {
     maven { url = 'https://repo.codemc.io/repository/maven-snapshots/' }
     maven { url = 'https://jitpack.io' }
     maven { url = 'https://repo.dmulloy2.net/repository/public/' }
-    maven { url = 'https://repo.seeseemelk.be/repository/maven-public/' } // MockBukkit
 }
 
 dependencies {
     compileOnly 'org.spigotmc:spigot-api:1.18.2-R0.1-SNAPSHOT'
 
-    implementation 'com.github.retrooper:packetevents-spigot:2.11.1'
-
+    implementation 'com.github.retrooper:packetevents-spigot:2.12.1'
+    
     compileOnly 'com.viaversion:viabackwards:5.3.2'
-    compileOnly 'com.viaversion:viaversion:5.4.1'
-
+    compileOnly 'com.viaversion:viaversion:5.9.1'
+    
     compileOnly 'it.unimi.dsi:fastutil:8.5.16'
-
+    
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
 
-    compileOnly 'io.netty:netty-all:4.1.97.Final'
+    compileOnly 'io.netty:netty-all:4.1.97.Final' 
 
-    implementation 'org.java-websocket:Java-WebSocket:1.5.4'
-
+    implementation 'org.java-websocket:Java-WebSocket:1.6.0'
+    
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
-
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
-    testImplementation 'com.github.seeseemelk:MockBukkit-v1.18:3.86.0'
 }
 
 processResources {
@@ -62,12 +58,12 @@ processResources {
 shadowJar {
     archiveClassifier.set('')
     archiveFileName.set("${project.name}-${project.version}.jar")
-
+    
     relocate 'com.github.retrooper.packetevents', 'tf.tuff.packetevents'
     relocate 'io.github.retrooper.packetevents', 'tf.tuff.packetevents'
     relocate 'com.fasterxml.jackson', 'tf.tuff.jackson'
     relocate 'org.java_websocket', 'tf.tuff.websocket'
-
+    
     exclude 'META-INF/*.SF'
     exclude 'META-INF/*.DSA'
     exclude 'META-INF/*.RSA'
@@ -83,12 +79,4 @@ tasks.named('jar') {
 
 tasks.named('build') {
     dependsOn shadowJar
-}
-
-test {
-    useJUnitPlatform()
-    testLogging {
-        events "passed", "skipped", "failed"
-        exceptionFormat "full"
-    }
 }

@@ -18,23 +18,21 @@ import tf.tuff.tuffactions.TuffActionBase;
 import tf.tuff.tuffactions.TuffActions;
 
 public class Restrictions extends TuffActionBase {
-    private RestrictionsCommand commandHandler;
+	private RestrictionsCommand commandHandler;
 	private Set<String> disallowed = ConcurrentHashMap.newKeySet();
 
-	private static final List<String> example = List.of(
-		"quickelytra", "fastcrystals", "hotbar_switcher", "fullbright", "tnt", "antipickup", "zoom", "glowingores", "rangecrosshair", "minimap"
-	);
+	private static final List<String> example = List.of("clientbrand");
 
-	public Restrictions(TuffActions plugin) {
-		super(plugin, "Restrictions", "restrictions", false);
-        this.commandHandler = new RestrictionsCommand(this, plugin.plugin);
-		plugin.plugin.getConfig().addDefault("restrictions.disallow", example);
+	public Restrictions(TuffActions actsPlugin) {
+		super(actsPlugin, "Restrictions", "restrictions", true);
+		this.commandHandler = new RestrictionsCommand(this, plugin);
+		plugin.getConfig().addDefault("restrictions.disallow", example);
 	}
 
 	public void loadConfig() {
 		disallowed.clear();
-		plugin.info("Loading Restrictions config...");
-		List<?> config = plugin.plugin.getConfig().getList("restrictions.disallow");
+		actsPlugin.info("Loading Restrictions config...");
+		List<?> config = plugin.getConfig().getList("restrictions.disallow");
 		for (Object val : config) {
 			if (val instanceof String) disallowed.add((String)val);
 		}
@@ -64,7 +62,7 @@ public class Restrictions extends TuffActionBase {
 				out.writeBoolean(false);
 			}
 
-			plugin.sendPluginMessage(player, bout.toByteArray());
+			actsPlugin.sendPluginMessage(player, bout.toByteArray());
 		} catch (IOException e) {
 			debug("Failed to send Restrictions to " + player.getName(), e);
 		}
@@ -86,9 +84,9 @@ public class Restrictions extends TuffActionBase {
 			out.writeUTF(key);
 			out.writeBoolean(!disallowed.contains(key));
 
-			plugin.sendPluginMessage(player, bout.toByteArray());
+			actsPlugin.sendPluginMessage(player, bout.toByteArray());
 		} catch (IOException e) {
-			plugin.log(Level.WARNING, "Failed to send Restriction "+key+" to " + player.getName(), e);
+			actsPlugin.log(Level.WARNING, "Failed to send Restriction "+key+" to " + player.getName(), e);
 		}
 	}
 

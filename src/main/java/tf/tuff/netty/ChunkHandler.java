@@ -167,10 +167,12 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
     private void handleMultiBlockChange(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise) throws Exception {
         buf.resetReaderIndex();
         buf.skipBytes(varIntLen(buf));
-        int cx = buf.readInt();
-        int cz = buf.readInt();
+        long chunkSectionPos = buf.readLong();
+        int cx = (int)(chunkSectionPos >> 42);
+        int cz = (int)((chunkSectionPos << 44) >> 44);
 
         if (Math.abs(cx) < 2000000 && Math.abs(cz) < 2000000) {
+            buf.readBoolean();
             int count = readVarInt(buf);
             java.util.List<Long> locs = new java.util.ArrayList<>();
             for (int i = 0; i < count; i++) {

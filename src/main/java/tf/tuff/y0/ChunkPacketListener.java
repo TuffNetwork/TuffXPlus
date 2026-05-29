@@ -15,9 +15,7 @@ public class ChunkPacketListener {
     }
 
     public void handleChunk(TuffX plugin, Player player, World world, int chunkX, int chunkZ){
-        if (!this.plugin.isPlayerReady(player)) {
-            return;
-        }
+        if (!this.plugin.isPlayerReady(player)) return;
 
         plugin.getServer().getScheduler().runTask(plugin, () -> {
             if (player.isOnline() && world.isChunkLoaded(chunkX, chunkZ)) {

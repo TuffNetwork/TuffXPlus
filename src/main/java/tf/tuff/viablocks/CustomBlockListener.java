@@ -1,6 +1,5 @@
 package tf.tuff.viablocks;
 
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -9,7 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import javax.annotation.Nonnull;
@@ -33,12 +31,8 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 
+import tf.tuff.netty.ChunkInjector;
 import tf.tuff.viablocks.version.VersionAdapter;
-
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
-import it.unimi.dsi.fastutil.longs.LongArrayList;
-import it.unimi.dsi.fastutil.longs.LongList;
 
 public class CustomBlockListener {
 
@@ -46,8 +40,7 @@ public class CustomBlockListener {
     private final VersionAdapter versionAdapter;
     private final PaletteManager paletteManager;
     private final EnumSet<Material> modernMaterials;
-    private tf.tuff.netty.ChunkInjector chunkInjector;
-    private static final Map<String, Integer> worldMinHeights = new ConcurrentHashMap<>();
+    private ChunkInjector chunkInjector;
     private static final long X_MASK = (1L << 26) - 1L;
     private static final long Z_MASK = (1L << 26) - 1L;
     private static final long Y_MASK = (1L << 12) - 1L;
@@ -87,8 +80,7 @@ public class CustomBlockListener {
         return chunkPacketCache.getIfPresent(chunkKey(worldName, x, z));
     }
 
-    public void setChunkInjector(tf.tuff.netty.ChunkInjector injector) {
-        if (injector == null) return;
+    public void setChunkInjector(ChunkInjector injector) {
         this.chunkInjector = injector;
     }
 
@@ -195,7 +187,7 @@ public class CustomBlockListener {
         if (chunkPacketCache.getIfPresent(key) != null) return;
 
         ChunkSnapshot snapshot = chunk.getChunkSnapshot(false, false, false);
-        int minHeight = getMinHeight(chunk.getWorld());
+        int minHeight = chunk.getWorld().getMinHeight();
         int maxHeight = chunk.getWorld().getMaxHeight();
 
         plugin.chunkExecutor.submit(() -> {
@@ -237,7 +229,7 @@ public class CustomBlockListener {
         }
 
         ChunkSnapshot snapshot = chunk.getChunkSnapshot(false, false, false);
-        int minHeight = getMinHeight(world);
+        int minHeight = world.getMinHeight();
         int maxHeight = world.getMaxHeight();
 
         plugin.chunkExecutor.submit(() -> {
@@ -264,30 +256,21 @@ public class CustomBlockListener {
     }
 
     private Map<Integer, List<Long>> findModernBlocksInChunk(ChunkSnapshot chunkSnapshot, int minHeight, int maxHeight) {
-        Int2ObjectMap<LongList> foundBlocks = new Int2ObjectOpenHashMap<>();
-    
+        Map<Integer, List<Long>> foundBlocks = new HashMap<>();
         int chunkX = chunkSnapshot.getX() << 4;
         int chunkZ = chunkSnapshot.getZ() << 4;
-    
-        for (int x = 0; x < 16; x++) {
-            int worldX = chunkX + x;
-            for (int z = 0; z < 16; z++) {
-                int worldZ = chunkZ + z;
-                for (int y = minHeight; y < maxHeight; y++) {
-                
-                    // Check material FIRST — getBlockType() returns an enum, no allocation
+
+        for (int y = minHeight; y < maxHeight; y++) {
+            for (int x = 0; x < 16; x++) {
+                for (int z = 0; z < 16; z++) {
                     Material blockType = chunkSnapshot.getBlockType(x, y, z);
-    
-                    if (blockType == Material.AIR
-                            || blockType == Material.CAVE_AIR
-                            || blockType == Material.VOID_AIR
-                            || !this.modernMaterials.contains(blockType)) {
+                    if (blockType == Material.AIR || !this.modernMaterials.contains(blockType)) {
                         continue;
                     }
-    
-                    // Only allocate BlockData for confirmed modern blocks
-                    BlockData data = chunkSnapshot.getBlockData(x, y, z);
-    
+                    
+                    @SuppressWarnings("null")
+                    @Nonnull BlockData data = chunkSnapshot.getBlockData(x, y, z);
+                    
                     Integer cachedId = blockDataIdCache.getIfPresent(data);
                     int materialId;
                     if (cachedId != null) {
@@ -296,12 +279,12 @@ public class CustomBlockListener {
                         materialId = this.paletteManager.getOrCreateId(data.getAsString());
                         blockDataIdCache.put(data, materialId);
                     }
-    
+
                     if (materialId != -1) {
-                        long packedLocation = packLocation(worldX, y, worldZ);
-                        LongList locs = foundBlocks.get(materialId);
+                        long packedLocation = packLocation(chunkX + x, y, chunkZ + z);
+                        List<Long> locs = foundBlocks.get(materialId);
                         if (locs == null) {
-                            locs = new LongArrayList();
+                            locs = new ArrayList<>();
                             foundBlocks.put(materialId, locs);
                         }
                         locs.add(packedLocation);
@@ -309,10 +292,9 @@ public class CustomBlockListener {
                 }
             }
         }
-    
-        return (Map<Integer, List<Long>>) (Map<?, ?>) foundBlocks;
-    }   
-    
+        return foundBlocks;
+    }
+
     public byte[] getExtraDataForMultiBlock(World world, List<Long> locations) {
         Map<Integer, List<Long>> foundBlocks = new HashMap<>();
         
@@ -631,19 +613,6 @@ public class CustomBlockListener {
         try {
             plugin.plugin.getServer().getScheduler().runTaskLater(plugin.plugin, task, delay); 
         } catch (Exception e) {}
-    }
-
-    private int getMinHeight(World world) {
-        return worldMinHeights.computeIfAbsent(world.getName(), k -> {
-            try {
-                Method method = world.getClass().getMethod("getMinHeight");
-                Object value = method.invoke(world);
-                if (value instanceof Integer) {
-                    return (Integer) value;
-                }
-            } catch (Exception e) {}
-            return 0;
-        });
     }
     
     public long packLocation(int x, int y, int z) {

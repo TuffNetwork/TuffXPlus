@@ -9,14 +9,14 @@ import org.bukkit.command.CommandSender;
 import tf.tuff.TuffX;
 
 public class RestrictionsCommand {
-    private final TuffX tuffx;
-    private final Restrictions restrictions;
+	private final TuffX tuffx;
+	private final Restrictions restrictions;
 
-    RestrictionsCommand(Restrictions restrictions, TuffX tuffx) {
-        this.restrictions = restrictions;
-        this.tuffx = tuffx;
-    }
-    
+	RestrictionsCommand(Restrictions restrictions, TuffX tuffx) {
+		this.restrictions = restrictions;
+		this.tuffx = tuffx;
+	}
+	
 	private boolean error(CommandSender sender, String msg) {
 		sender.sendMessage("\u00A7c%s".formatted(msg));
 		return true;

@@ -7,7 +7,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.*;
-import org.bukkit.event.entity.EntityToggleGlideEvent;
 import org.bukkit.event.entity.EntityToggleSwimEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerChangedWorldEvent;
@@ -35,8 +34,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     public ViaBlocksPlugin viaBlocksPlugin;
     public TuffActions tuffActions;
     public ViaEntitiesPlugin viaEntitiesPlugin;
-    public String latestAvailableVersion = null;
-
     private ChunkInjector chunkInjector;
 
     @Override
@@ -56,6 +53,8 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     public void onEnable() {
         PacketEvents.getAPI().init();
 
+        saveDefaultConfig();
+
         y0Plugin.onTuffXEnable();
         tuffActions.onTuffXEnable();
         viaBlocksPlugin.onTuffXEnable();
@@ -65,7 +64,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         viaBlocksPlugin.blockListener.setChunkInjector(chunkInjector);
         y0Plugin.setChunkInjector(chunkInjector);
 
-        saveDefaultConfig();
         getConfig().options().copyDefaults(true);
         saveConfig();
 
@@ -103,8 +101,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         }
 
         PacketEvents.getAPI().terminate();
-
-        getServer().getMessenger().unregisterIncomingPluginChannel(this);
     }
 
     public void reloadTuffX(){
@@ -202,11 +198,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     @EventHandler
     public void onToggleSwim(EntityToggleSwimEvent e) {
         tuffActions.handleToggleSwim(e);
-    }
-
-    @EventHandler
-    public void onToggleGlide(EntityToggleGlideEvent e) {
-        tuffActions.handleToggleGlide(e);
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
