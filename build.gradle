@@ -36,7 +36,7 @@ dependencies {
     
     compileOnly 'it.unimi.dsi:fastutil:8.5.16'
     
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.4'
 
     compileOnly 'io.netty:netty-all:4.1.97.Final' 
 
