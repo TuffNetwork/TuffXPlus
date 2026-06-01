@@ -96,7 +96,6 @@ Restrictions can be configured in this plugin's `config.yaml` You may also use `
 `minecraftgui` - Toggles between Tuff UI and Minecraft UI
 `movingBG` - Toggles moving the main menu background based on mouse movement
 
-##
 
 ### Old modules
 `smalltotems` - Renders held totems smaller in first-person
