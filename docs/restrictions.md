@@ -20,7 +20,7 @@ Restrictions can be configured in this plugin's `config.yaml` You may also use `
 `glowingores` - Makes ores glow
 `rangecrosshair` - Turns crosshair red if an entity is in hitting range
 `betterhitboxes` - Turns hitbox a different color if the entity can be hit
-`minimap` - Enabled a minimap when you are moving
+`minimap` - Enables a minimap when you are moving
 
 ## Visual cleanup
 `cpvpmode` - Removes fire effects, smoke, and crystal explosion particles
