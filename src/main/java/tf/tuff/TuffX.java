@@ -34,8 +34,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     public ViaBlocksPlugin viaBlocksPlugin;
     public TuffActions tuffActions;
     public ViaEntitiesPlugin viaEntitiesPlugin;
-    public String latestAvailableVersion = null;
-
     private ChunkInjector chunkInjector;
 
     @Override
