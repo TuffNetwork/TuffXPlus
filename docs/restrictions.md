@@ -4,8 +4,12 @@ Restrictions can be configured in this plugin's `config.yaml` You may also use `
 
 **Most client TuffClient versions require all module slugs to be __all lowercase__.**
 
+---
+
 ## Exploit Discovered - it is recommended to always restrict these
 `clientbrand` - Old version of `clientbrander` - This version still displayed the brand players who were invisible.
+
+---
 
 ## Possible PVP or Progression Advantage
 `quickelytra` - Automatically use elytra when using a firework
@@ -69,6 +73,8 @@ Restrictions can be configured in this plugin's `config.yaml` You may also use `
 `shulker` - Shows shulker box contents
 `chatheads` - Renders player heads next to their chat messages
 
+---
+
 ## Other Modules (Not recommended to disallow)
 
 ### In-Game Customization
@@ -96,6 +102,7 @@ Restrictions can be configured in this plugin's `config.yaml` You may also use `
 `minecraftgui` - Toggles between Tuff UI and Minecraft UI
 `movingBG` - Toggles moving the main menu background based on mouse movement
 
+---
 
 ### Old modules
 `smalltotems` - Renders held totems smaller in first-person
