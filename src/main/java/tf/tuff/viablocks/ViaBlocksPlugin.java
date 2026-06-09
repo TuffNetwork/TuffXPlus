@@ -206,7 +206,7 @@ public final class ViaBlocksPlugin {
         TextComponent link = new TextComponent("bug tracker");
         link.setColor(ChatColor.BLUE);
         link.setUnderlined(true);
-        link.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://github.com/TuffNetwork/ViaIssuesBlocks/issues"));
+        link.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://github.com/TuffNetwork/Tuff-Client-Builds/issues"));
         link.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder("Click to open the bug tracker!").color(ChatColor.GRAY).create()));
         TextComponent disclaimer = new TextComponent("\n\n(Bamboo and kelp are noted.)");
         disclaimer.setColor(ChatColor.DARK_GRAY);
