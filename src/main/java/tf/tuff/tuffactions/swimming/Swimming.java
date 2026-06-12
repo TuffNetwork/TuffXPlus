@@ -13,6 +13,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityToggleSwimEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.scheduler.BukkitTask;
 
 import tf.tuff.tuffactions.TuffActionBase;
 import tf.tuff.tuffactions.TuffActions;
@@ -20,6 +21,7 @@ import tf.tuff.tuffactions.TuffActions;
 public class Swimming extends TuffActionBase {
 
     private final Set<UUID> swimmingPlayers = ConcurrentHashMap.newKeySet();
+    private BukkitTask swimStateTask;
 
     public Swimming(TuffActions plugin) {
         super(plugin, "Swimming", "swimming", true);
@@ -27,8 +29,20 @@ public class Swimming extends TuffActionBase {
 
     @Override
     protected void disable() {
+        if (swimStateTask != null) {
+            swimStateTask.cancel();
+            swimStateTask = null;
+        }
         swimmingPlayers.clear();
         super.disable();
+    }
+
+    @Override
+    protected void enable(boolean wasEnabled) {
+        if (swimStateTask == null) {
+            swimStateTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::maintainSwimmingState, 1L, 1L);
+        }
+        super.enable(wasEnabled);
     }
 
     /*** CUSTOM, SERVER-BOUND PACKETS ***/
@@ -51,7 +65,7 @@ public class Swimming extends TuffActionBase {
         } else {
             swimmingPlayers.remove(player.getUniqueId());
         }
-        player.setSwimming(isSwimming);
+        applySwimmingState(player, isSwimming);
         broadcastSwimState(player, isSwimming);
     }
 
@@ -67,7 +81,11 @@ public class Swimming extends TuffActionBase {
         if (!(event.getEntity() instanceof Player)) return;
         Player player = (Player) event.getEntity();
         if (!event.isSwimming() && swimmingPlayers.contains(player.getUniqueId())) {
-            // event.setCancelled(true);
+            plugin.getServer().getScheduler().runTask(plugin, () -> {
+                if (swimmingPlayers.contains(player.getUniqueId()) && player.isOnline()) {
+                    applySwimmingState(player, true);
+                }
+            });
         }
     }
 
@@ -103,6 +121,31 @@ public class Swimming extends TuffActionBase {
             actsPlugin.sendPluginMessage(recipient, bout.toByteArray());
         } catch (IOException e) {
             debug("Failed to send swim state to " + recipient.getName(), e);
+        }
+    }
+
+    private void maintainSwimmingState() {
+        for (UUID playerId : swimmingPlayers) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player == null || !player.isOnline()) {
+                swimmingPlayers.remove(playerId);
+                continue;
+            }
+            if (!player.isInWater()) {
+                swimmingPlayers.remove(playerId);
+                applySwimmingState(player, false);
+                broadcastSwimState(player, false);
+                continue;
+            }
+            applySwimmingState(player, true);
+        }
+    }
+
+    private void applySwimmingState(Player player, boolean swimming) {
+        if (player == null || !player.isOnline()) return;
+        if (swimming && !player.isInWater()) return;
+        if (player.isSwimming() != swimming) {
+            player.setSwimming(swimming);
         }
     }
 }
