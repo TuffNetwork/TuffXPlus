@@ -10,6 +10,7 @@ import org.bukkit.World;
 import org.bukkit.entity.Player;
 import tf.tuff.viablocks.CustomBlockListener;
 import tf.tuff.y0.Y0Plugin;
+import tf.tuff.util.SchedulerCompat;
 
 import java.util.Map;
 import java.util.UUID;
@@ -144,7 +145,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 
     private void handleBlockChange(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise) throws Exception {
         BlockChangePosition position = decodeSingleBlockChangePosition(buf.getLong(buf.readerIndex()));
-        resolveViaDataOnMainThread(ctx, buf, promise, () -> {
+        resolveViaDataOnRegionThread(ctx, buf, promise, player.getWorld(), position.x >> 4, position.z >> 4, () -> {
             World world = player.getWorld();
             if (!world.isChunkLoaded(position.x >> 4, position.z >> 4)) {
                 return null;
@@ -157,7 +158,8 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
         buf.resetReaderIndex();
         buf.skipBytes(varIntLen(buf));
         long chunkSectionPos = buf.readLong();
-        decodeSectionCoordX(chunkSectionPos); // validates bit layout alongside the packed entries below
+        int cx = decodeSectionCoordX(chunkSectionPos);
+        int cz = decodeSectionCoordZ(chunkSectionPos);
         buf.readBoolean();
         int count = readVarInt(buf);
         java.util.List<Long> locs = new java.util.ArrayList<>(count);
@@ -166,13 +168,14 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
             locs.add(viaBlocks.packLocation(position.x, position.y, position.z));
         }
 
-        resolveViaDataOnMainThread(ctx, buf, promise, () -> viaBlocks.getExtraDataForMultiBlock(player.getWorld(), locs));
+        resolveViaDataOnRegionThread(ctx, buf, promise, player.getWorld(), cx, cz, () -> viaBlocks.getExtraDataForMultiBlock(player.getWorld(), locs));
     }
 
-    private void resolveViaDataOnMainThread(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
-                                            java.util.concurrent.Callable<byte[]> supplier) {
+    private void resolveViaDataOnRegionThread(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
+                                              World world, int chunkX, int chunkZ,
+                                              java.util.concurrent.Callable<byte[]> supplier) {
         ByteBuf retained = buf.retain();
-        Bukkit.getScheduler().runTask(viaBlocks.plugin.plugin, () -> {
+        SchedulerCompat.runRegion(viaBlocks.plugin.plugin, world, chunkX, chunkZ, () -> {
             byte[] data = null;
             try {
                 if (player.isOnline() && isViaActive()) {
@@ -202,7 +205,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
     }
 
     private void requestViaCache(int cx, int cz, long key) {
-        Bukkit.getScheduler().runTask(viaBlocks.plugin.plugin, () -> {
+        SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
             if (!player.isOnline()) {
                 release(key);
                 return;
@@ -219,7 +222,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
     }
 
     private void requestY0Cache(int cx, int cz, long key) {
-        Bukkit.getScheduler().runTask(viaBlocks.plugin.plugin, () -> {
+        SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
             if (!player.isOnline()) {
                 release(key);
                 return;

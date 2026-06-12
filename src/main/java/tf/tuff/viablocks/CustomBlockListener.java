@@ -33,6 +33,7 @@ import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 
 import tf.tuff.netty.ChunkInjector;
+import tf.tuff.util.SchedulerCompat;
 import tf.tuff.viablocks.version.VersionAdapter;
 
 public class CustomBlockListener {
@@ -159,14 +160,16 @@ public class CustomBlockListener {
             cacheChunkWithCallback(world, chunk[0], chunk[1], data -> {
                 if (!player.isOnline() || !plugin.isPlayerEnabled(player)) return;
                 if (data != null && data.length > 0) {
-                    player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
+                    SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
                 }
             });
         }
 
         if (endIndex < chunks.size()) {
             final int nextStart = endIndex;
-            runSyncLater(() -> sendChunksBatched(player, worldName, chunks, nextStart), 1);
+            if (player.isOnline()) {
+                SchedulerCompat.runEntityLater(player, plugin.plugin, () -> sendChunksBatched(player, worldName, chunks, nextStart), 1L);
+            }
         }
     }
 
@@ -519,24 +522,14 @@ public class CustomBlockListener {
         }
         if (stateId == -1) return;
 
-        World world = location.getWorld();
-        for (Player player : world.getPlayers()) {
-            if (plugin.isPlayerEnabled(player) && player.getLocation().distanceSquared(location) < UPDATE_RADIUS_SQUARED) {
-                sendPacket(player, stateId, location);
-            }
-        }
+        scheduleNearbyEnabledPlayers(location, player -> sendPacket(player, stateId, location));
     }
 
     private void sendClearUpdateToNearbyPlayers(Location location) {
         if (!plugin.isEnabled() || plugin.viaBlocksEnabledPlayers.isEmpty() || location.getWorld() == null) return;
         final int AIR_ID = 0;
-        World world = location.getWorld();
-        
-        for (Player player : world.getPlayers()) {
-            if (plugin.isPlayerEnabled(player) && player.getLocation().distanceSquared(location) < UPDATE_RADIUS_SQUARED) {
-                sendPacket(player, AIR_ID, location);
-            }
-        }
+
+        scheduleNearbyEnabledPlayers(location, player -> sendPacket(player, AIR_ID, location));
     }
 
     private void invalidateChunkCache(Chunk chunk) {
@@ -559,7 +552,7 @@ public class CustomBlockListener {
         }
         stateList.add(packLocation(location));
         if (pendingFlush.add(playerId)) {
-            runSyncLater(() -> flushPendingUpdates(playerId), plugin.getUpdateBatchDelayTicks());
+            SchedulerCompat.runEntityLater(player, plugin.plugin, () -> flushPendingUpdates(playerId), plugin.getUpdateBatchDelayTicks());
         }
     }
 
@@ -572,7 +565,7 @@ public class CustomBlockListener {
         if (player == null || !player.isOnline()) return;
 
         byte[] packetData = buildChunkPacket(updateData);
-        player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, packetData);
+        SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, packetData);
     }
 
     private int getMaterialId(BlockData data) {
@@ -607,7 +600,7 @@ public class CustomBlockListener {
         for (String state : palette) {
             out.writeUTF(state);
         }
-        player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, out.toByteArray());
+        SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, out.toByteArray());
     }
     
     public boolean isModernMaterial(Material material) {
@@ -619,7 +612,7 @@ public class CustomBlockListener {
         cacheChunkWithCallback(chunk.getWorld(), chunk.getX(), chunk.getZ(), data -> {
             if (!player.isOnline() || !plugin.isPlayerEnabled(player)) return;
             if (data != null && data.length > 0) {
-                player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
+                SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
             }
         });
     }
@@ -632,20 +625,10 @@ public class CustomBlockListener {
         recentModernChanges.invalidateAll();
     }
 
-    private void runSyncLater(Runnable task, long delay) { 
-        if (!plugin.plugin.isEnabled()) return;
-        try {
-            plugin.plugin.getServer().getScheduler().runTaskLater(plugin.plugin, task, delay); 
-        } catch (Exception e) {}
-    }
-
     private void deliverCallback(Consumer<byte[]> callback, byte[] data) {
-        if (callback == null) return;
-        if (Bukkit.isPrimaryThread()) {
+        if (callback != null) {
             callback.accept(data);
-            return;
         }
-        Bukkit.getScheduler().runTask(plugin.plugin, () -> callback.accept(data));
     }
 
     private boolean hasViaBlocksPlayersInWorld(World world) {
@@ -656,6 +639,23 @@ public class CustomBlockListener {
             }
         }
         return false;
+    }
+
+    private void scheduleNearbyEnabledPlayers(Location location, Consumer<Player> action) {
+        World world = location.getWorld();
+        if (world == null) return;
+
+        SchedulerCompat.runGlobal(plugin.plugin, () -> {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (!plugin.isPlayerEnabled(player)) continue;
+                SchedulerCompat.runEntity(player, plugin.plugin, () -> {
+                    if (!player.isOnline()) return;
+                    if (!world.equals(player.getWorld())) return;
+                    if (player.getLocation().distanceSquared(location) >= UPDATE_RADIUS_SQUARED) return;
+                    action.accept(player);
+                });
+            }
+        });
     }
     
     public long packLocation(int x, int y, int z) {

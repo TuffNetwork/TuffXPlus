@@ -4,6 +4,7 @@ import io.netty.channel.ChannelHandler;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import tf.tuff.netty.BaseInjector;
+import tf.tuff.util.SchedulerCompat;
 
 public class EntityInjector extends BaseInjector {
 
@@ -21,15 +22,13 @@ public class EntityInjector extends BaseInjector {
 
 	@Override
 	protected void onPostInject(Player player) {
-		plugin.plugin.getServer().getScheduler().runTask(plugin.plugin, () -> {
-			sendExistingEntities(player);
-		});
+		SchedulerCompat.runEntity(player, plugin.plugin, () -> sendExistingEntities(player));
 	}
 
 	private void sendExistingEntities(Player player) {
 		int viewDistance = player.getWorld().getViewDistance() * 16;
 
-		for (Entity entity : player.getWorld().getEntities()) {
+		for (Entity entity : player.getNearbyEntities(viewDistance, viewDistance, viewDistance)) {
 			if (entity.equals(player)) continue;
 			if (entity instanceof Player) continue;
 
@@ -59,6 +58,6 @@ public class EntityInjector extends BaseInjector {
 		out.writeFloat(entity.getLocation().getYaw());
 		out.writeFloat(entity.getLocation().getPitch());
 
-		player.sendPluginMessage(plugin.plugin, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, out.toByteArray());
+		SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, out.toByteArray());
 	}
 }

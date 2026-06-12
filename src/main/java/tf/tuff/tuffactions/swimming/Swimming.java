@@ -3,6 +3,7 @@ package tf.tuff.tuffactions.swimming;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,15 +14,16 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityToggleSwimEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitTask;
 
+import io.github.retrooper.packetevents.util.folia.TaskWrapper;
 import tf.tuff.tuffactions.TuffActionBase;
 import tf.tuff.tuffactions.TuffActions;
+import tf.tuff.util.SchedulerCompat;
 
 public class Swimming extends TuffActionBase {
 
     private final Set<UUID> swimmingPlayers = ConcurrentHashMap.newKeySet();
-    private BukkitTask swimStateTask;
+    private final Map<UUID, TaskWrapper> swimStateTasks = new ConcurrentHashMap<>();
 
     public Swimming(TuffActions plugin) {
         super(plugin, "Swimming", "swimming", true);
@@ -29,26 +31,23 @@ public class Swimming extends TuffActionBase {
 
     @Override
     protected void disable() {
-        if (swimStateTask != null) {
-            swimStateTask.cancel();
-            swimStateTask = null;
+        for (TaskWrapper task : swimStateTasks.values()) {
+            task.cancel();
         }
+        swimStateTasks.clear();
         swimmingPlayers.clear();
         super.disable();
     }
 
     @Override
     protected void enable(boolean wasEnabled) {
-        if (swimStateTask == null) {
-            swimStateTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::maintainSwimmingState, 1L, 1L);
-        }
         super.enable(wasEnabled);
     }
 
     /*** CUSTOM, SERVER-BOUND PACKETS ***/
     public void handleSwimReady(Player player) {
         if (!isEnabled()) return;
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+        SchedulerCompat.runEntityLater(player, plugin, () -> {
             for (UUID swimmingPlayerId : swimmingPlayers) {
                 Player swimmingPlayer = Bukkit.getPlayer(swimmingPlayerId);
                 if (swimmingPlayer != null && swimmingPlayer.isOnline() && player.canSee(swimmingPlayer)) {
@@ -62,17 +61,21 @@ public class Swimming extends TuffActionBase {
         if (!isEnabled()) return;
         if (isSwimming) {
             swimmingPlayers.add(player.getUniqueId());
+            startSwimMaintenance(player);
         } else {
             swimmingPlayers.remove(player.getUniqueId());
+            stopSwimMaintenance(player.getUniqueId());
         }
-        applySwimmingState(player, isSwimming);
+        SchedulerCompat.runEntity(player, plugin, () -> applySwimmingState(player, isSwimming));
         broadcastSwimState(player, isSwimming);
     }
 
     public void handleElytraState(Player player, boolean isGliding) {
         if (!isEnabled()) return;
-        ItemStack chest = player.getInventory().getChestplate();
-        if (chest != null && chest.getType() == Material.ELYTRA) player.setGliding(isGliding);
+        SchedulerCompat.runEntity(player, plugin, () -> {
+            ItemStack chest = player.getInventory().getChestplate();
+            if (chest != null && chest.getType() == Material.ELYTRA) player.setGliding(isGliding);
+        });
     }
 
     /*** EVENT HANDLERS ***/
@@ -81,7 +84,7 @@ public class Swimming extends TuffActionBase {
         if (!(event.getEntity() instanceof Player)) return;
         Player player = (Player) event.getEntity();
         if (!event.isSwimming() && swimmingPlayers.contains(player.getUniqueId())) {
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
+            SchedulerCompat.runEntity(player, plugin, () -> {
                 if (swimmingPlayers.contains(player.getUniqueId()) && player.isOnline()) {
                     applySwimmingState(player, true);
                 }
@@ -92,6 +95,7 @@ public class Swimming extends TuffActionBase {
     public void handlePlayerQuit(PlayerQuitEvent event) {
         if (!isEnabled()) return;
         Player player = event.getPlayer();
+        stopSwimMaintenance(player.getUniqueId());
         if (swimmingPlayers.remove(player.getUniqueId())) {
             broadcastSwimState(player, false);
         }
@@ -129,16 +133,27 @@ public class Swimming extends TuffActionBase {
             Player player = Bukkit.getPlayer(playerId);
             if (player == null || !player.isOnline()) {
                 swimmingPlayers.remove(playerId);
+                stopSwimMaintenance(playerId);
                 continue;
             }
-            if (!player.isInWater()) {
-                swimmingPlayers.remove(playerId);
-                applySwimmingState(player, false);
-                broadcastSwimState(player, false);
-                continue;
-            }
-            applySwimmingState(player, true);
+            SchedulerCompat.runEntity(player, plugin, () -> maintainSwimmingState(player));
         }
+    }
+
+    private void maintainSwimmingState(Player player) {
+        if (!player.isOnline()) {
+            stopSwimMaintenance(player.getUniqueId());
+            swimmingPlayers.remove(player.getUniqueId());
+            return;
+        }
+        if (!player.isInWater()) {
+            stopSwimMaintenance(player.getUniqueId());
+            swimmingPlayers.remove(player.getUniqueId());
+            applySwimmingState(player, false);
+            broadcastSwimState(player, false);
+            return;
+        }
+        applySwimmingState(player, true);
     }
 
     private void applySwimmingState(Player player, boolean swimming) {
@@ -146,6 +161,18 @@ public class Swimming extends TuffActionBase {
         if (swimming && !player.isInWater()) return;
         if (player.isSwimming() != swimming) {
             player.setSwimming(swimming);
+        }
+    }
+
+    private void startSwimMaintenance(Player player) {
+        swimStateTasks.computeIfAbsent(player.getUniqueId(),
+            ignored -> SchedulerCompat.runEntityTimer(player, plugin, () -> maintainSwimmingState(player), 1L, 1L));
+    }
+
+    private void stopSwimMaintenance(UUID playerId) {
+        TaskWrapper task = swimStateTasks.remove(playerId);
+        if (task != null) {
+            task.cancel();
         }
     }
 }

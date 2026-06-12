@@ -29,6 +29,7 @@ import net.md_5.bungee.api.chat.TextComponent;
 import tf.tuff.viablocks.version.VersionAdapter;
 import tf.tuff.viablocks.version.modern.ModernAdapter;
 import tf.tuff.TuffX;
+import tf.tuff.util.SchedulerCompat;
 
 public final class ViaBlocksPlugin {
 
@@ -52,8 +53,6 @@ public final class ViaBlocksPlugin {
     public PaletteManager paletteManager;
     private long updateBatchDelayTicks = 1L;
     public ExecutorService chunkExecutor;
-    public boolean isPaper = false;
-
     public TuffX plugin;
 
     public ViaBlocksPlugin(TuffX plugin){
@@ -91,14 +90,9 @@ public final class ViaBlocksPlugin {
 
         this.paletteManager = new PaletteManager(this.versionAdapter);
 
-        try {
-            Class.forName("io.papermc.paper.threadedregions.scheduler.AsyncScheduler");
-            this.isPaper = true;
-            info("Paper detected. Enabling optimized asynchronous scheduling.");
-        } catch (ClassNotFoundException e) {
-            this.isPaper = false;
-            info("Running on Spigot/Bukkit. Using standard scheduler.");
-        }
+        info(SchedulerCompat.isFolia()
+            ? "Folia detected. Using region and entity schedulers."
+            : "Using standard Bukkit-compatible schedulers.");
 
         plugin.saveDefaultConfig();
         loadSyncSettings();
@@ -225,7 +219,7 @@ public final class ViaBlocksPlugin {
         disclaimer.setItalic(true);
         meta.spigot().addPage(new ComponentBuilder("").append(welcome).append(body).append(link).append(new TextComponent(".")).append(disclaimer).create());
         book.setItemMeta(meta);
-        plugin.getServer().getScheduler().runTask(plugin, () -> player.openBook(book));
+        SchedulerCompat.runEntity(player, plugin, () -> player.openBook(book));
     }
 
     public boolean isEnabled() {

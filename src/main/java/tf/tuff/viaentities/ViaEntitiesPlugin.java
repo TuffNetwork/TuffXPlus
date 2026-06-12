@@ -8,6 +8,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Level;
 
+import tf.tuff.util.SchedulerCompat;
+
 public final class ViaEntitiesPlugin {
 
     public static final String CLIENTBOUND_CHANNEL = "viaentities:data";
@@ -105,7 +107,7 @@ public final class ViaEntitiesPlugin {
             out.writeUTF(entityType);
         }
 
-        player.sendPluginMessage(plugin, CLIENTBOUND_CHANNEL, out.toByteArray());
+        SchedulerCompat.sendPluginMessage(plugin, player, CLIENTBOUND_CHANNEL, out.toByteArray());
     }
 
     public void handlePlayerQuit(org.bukkit.event.player.PlayerQuitEvent event) {

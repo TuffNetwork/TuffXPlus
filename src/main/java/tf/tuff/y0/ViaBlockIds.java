@@ -21,6 +21,7 @@ import com.viaversion.viaversion.api.protocol.version.ProtocolVersion;
 
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import tf.tuff.TuffX;
+import tf.tuff.util.SchedulerCompat;
 
 public class ViaBlockIds {
     private final TuffX p;
@@ -37,7 +38,7 @@ public class ViaBlockIds {
 
         plugin.info("Server Minecraft Version: " + serverVersion);
 
-        Bukkit.getScheduler().runTaskLater(pl, this::initializeMappings, 1L);
+        SchedulerCompat.runGlobalLater(pl, this::initializeMappings, 1L);
     }
 
     private void initializeMappings() {
