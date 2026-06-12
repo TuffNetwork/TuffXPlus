@@ -66,7 +66,9 @@ public final class ViaBlocksPlugin {
         if (chunkExecutor != null) {
             chunkExecutor.shutdownNow();
         }
-        this.chunkExecutor = Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors()));
+        this.chunkExecutor = enabled
+            ? Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors()))
+            : null;
 
         if (playerDataFile == null) {
             playerDataFile = new File(plugin.getDataFolder(), "players.yml");
@@ -76,14 +78,14 @@ public final class ViaBlocksPlugin {
         if (blockListener != null) {
             blockListener.clearCache();
         }
+
+        viaBlocksEnabledPlayers.clear();
         
         info("ViaBlocks reloaded.");
     }
 
     public void onTuffXEnable() {
         instance = this;
-
-        this.chunkExecutor = Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors()));
 
         this.versionAdapter = new ModernAdapter();
 
@@ -100,6 +102,9 @@ public final class ViaBlocksPlugin {
 
         plugin.saveDefaultConfig();
         loadSyncSettings();
+        this.chunkExecutor = enabled
+            ? Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors()))
+            : null;
         setupPlayerData();
            
 
@@ -109,10 +114,15 @@ public final class ViaBlocksPlugin {
         this.blockListener = new CustomBlockListener(this, this.versionAdapter, this.paletteManager);
 
         plugin.getCommand("viablocks").setExecutor(plugin);
-        info("ViaBlocks has been enabled successfully and is listening for client handshakes.");
+        if (enabled) {
+            info("ViaBlocks has been enabled successfully and is listening for client handshakes.");
+        } else {
+            info("ViaBlocks is disabled in config.");
+        }
     }
 
     public void handlePacket(Player player, byte[] message) {
+        if (!isEnabled() || blockListener == null) return;
         if (!isPlayerEnabled(player) && isEnabled()) {
             debug("Received ViaBlocks handshake from player: " + player.getName() + ". Enabling custom blocks.");
             setPlayerEnabled(player, true);
@@ -149,6 +159,8 @@ public final class ViaBlocksPlugin {
             chunkExecutor.shutdownNow();
             chunkExecutor = null;
         }
+
+        viaBlocksEnabledPlayers.clear();
 
         info("ViaBlocks has been disabled.");
     }
@@ -255,6 +267,10 @@ public final class ViaBlocksPlugin {
             } else if (args[0].equalsIgnoreCase("refresh")) {
                 if (!player.hasPermission("tuffx.viablocks.command.refresh")) {
                     player.sendMessage("\u00A7cYou do not have permission to use this command.");
+                    return true;
+                }
+                if (!isEnabled() || blockListener == null) {
+                    player.sendMessage("\u00A7cViaBlocks is disabled.");
                     return true;
                 }
                 player.sendMessage("\u00A7aRefreshing modern blocks in your view distance...");

@@ -44,6 +44,12 @@ dependencies {
     
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.spigotmc:spigot-api:1.18.2-R0.1-SNAPSHOT'
+    testRuntimeOnly 'io.netty:netty-all:4.1.97.Final'
+    testRuntimeOnly 'it.unimi.dsi:fastutil:8.5.16'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
 }
 
 processResources {
@@ -79,4 +85,8 @@ tasks.named('jar') {
 
 tasks.named('build') {
     dependsOn shadowJar
+}
+
+test {
+    useJUnitPlatform()
 }

@@ -101,6 +101,7 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         }
 
         PacketEvents.getAPI().terminate();
+        getServer().getMessenger().unregisterIncomingPluginChannel(this);
     }
 
     public void reloadTuffX(){

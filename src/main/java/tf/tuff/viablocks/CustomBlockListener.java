@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import javax.annotation.Nonnull;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
@@ -151,10 +152,16 @@ public class CustomBlockListener {
         int endIndex = Math.min(startIndex + CHUNKS_PER_TICK, chunks.size());
         for (int i = startIndex; i < endIndex; i++) {
             int[] chunk = chunks.get(i);
-            byte[] data = getExtraDataForChunk(worldName, chunk[0], chunk[1]);
-            if (data != null && data.length > 0) {
-                player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
+            World world = player.getWorld();
+            if (!world.getName().equals(worldName)) {
+                return;
             }
+            cacheChunkWithCallback(world, chunk[0], chunk[1], data -> {
+                if (!player.isOnline() || !plugin.isPlayerEnabled(player)) return;
+                if (data != null && data.length > 0) {
+                    player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
+                }
+            });
         }
 
         if (endIndex < chunks.size()) {
@@ -176,11 +183,13 @@ public class CustomBlockListener {
     }
 
     public void handleChunkLoad(ChunkLoadEvent event) {
+        if (!plugin.isEnabled() || !hasViaBlocksPlayersInWorld(event.getWorld())) return;
         prepareChunkCache(event.getChunk());
     }
 
     public void prepareChunkCache(Chunk chunk) {
-        if (!chunk.isLoaded() || modernMaterials.isEmpty()) return;
+        if (!plugin.isEnabled() || !chunk.isLoaded() || modernMaterials.isEmpty()) return;
+        if (plugin.chunkExecutor == null || plugin.chunkExecutor.isShutdown()) return;
 
         String key = chunkKey(chunk.getWorld().getName(), chunk.getX(), chunk.getZ());
 
@@ -208,23 +217,34 @@ public class CustomBlockListener {
     }
 
     public void cacheChunkWithCallback(World world, int x, int z, Consumer<byte[]> callback) {
+        if (!plugin.isEnabled()) {
+            deliverCallback(callback, null);
+            return;
+        }
+
         String key = chunkKey(world.getName(), x, z);
         byte[] existing = chunkPacketCache.getIfPresent(key);
         if (existing != null) {
-            callback.accept(existing.length > 0 ? existing : null);
+            deliverCallback(callback, existing.length > 0 ? existing : null);
             return;
         }
 
         if (!world.isChunkLoaded(x, z)) {
             chunkPacketCache.put(key, EMPTY_PACKET);
-            callback.accept(null);
+            deliverCallback(callback, null);
             return;
         }
 
         Chunk chunk = world.getChunkAt(x, z);
         if (!chunk.isLoaded() || modernMaterials.isEmpty()) {
             chunkPacketCache.put(key, EMPTY_PACKET);
-            callback.accept(null);
+            deliverCallback(callback, null);
+            return;
+        }
+
+        if (plugin.chunkExecutor == null || plugin.chunkExecutor.isShutdown()) {
+            chunkPacketCache.put(key, EMPTY_PACKET);
+            deliverCallback(callback, null);
             return;
         }
 
@@ -236,21 +256,21 @@ public class CustomBlockListener {
             try {
                 byte[] cached = chunkPacketCache.getIfPresent(key);
                 if (cached != null) {
-                    callback.accept(cached.length > 0 ? cached : null);
+                    deliverCallback(callback, cached.length > 0 ? cached : null);
                     return;
                 }
                 Map<Integer, List<Long>> foundBlocks = findModernBlocksInChunk(snapshot, minHeight, maxHeight);
                 if (foundBlocks.isEmpty()) {
                     chunkPacketCache.put(key, EMPTY_PACKET);
-                    callback.accept(null);
+                    deliverCallback(callback, null);
                 } else {
                     @SuppressWarnings("null")
                     @Nonnull byte[] data = buildChunkPacket(foundBlocks);
                     chunkPacketCache.put(key, data);
-                    callback.accept(data);
+                    deliverCallback(callback, data);
                 }
             } catch (Exception e) {
-                callback.accept(null);
+                deliverCallback(callback, null);
             }
         });
     }
@@ -260,17 +280,20 @@ public class CustomBlockListener {
         int chunkX = chunkSnapshot.getX() << 4;
         int chunkZ = chunkSnapshot.getZ() << 4;
 
-        for (int y = minHeight; y < maxHeight; y++) {
-            for (int x = 0; x < 16; x++) {
-                for (int z = 0; z < 16; z++) {
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+                for (int y = minHeight; y < maxHeight; y++) {
                     Material blockType = chunkSnapshot.getBlockType(x, y, z);
-                    if (blockType == Material.AIR || !this.modernMaterials.contains(blockType)) {
+                    if (blockType == Material.AIR
+                        || blockType == Material.CAVE_AIR
+                        || blockType == Material.VOID_AIR
+                        || !this.modernMaterials.contains(blockType)) {
                         continue;
                     }
-                    
+
                     @SuppressWarnings("null")
                     @Nonnull BlockData data = chunkSnapshot.getBlockData(x, y, z);
-                    
+
                     Integer cachedId = blockDataIdCache.getIfPresent(data);
                     int materialId;
                     if (cachedId != null) {
@@ -593,11 +616,12 @@ public class CustomBlockListener {
 
     public void processChunkForSinglePlayer(Chunk chunk, Player player) {
         if (!chunk.isLoaded() || !plugin.isPlayerEnabled(player)) return;
-        prepareChunkCache(chunk);
-        byte[] data = getExtraDataForChunk(chunk.getWorld().getName(), chunk.getX(), chunk.getZ());
-        if (data != null && data.length > 0) {
-            player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
-        }
+        cacheChunkWithCallback(chunk.getWorld(), chunk.getX(), chunk.getZ(), data -> {
+            if (!player.isOnline() || !plugin.isPlayerEnabled(player)) return;
+            if (data != null && data.length > 0) {
+                player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
+            }
+        });
     }
 
     public void clearCache() {
@@ -613,6 +637,25 @@ public class CustomBlockListener {
         try {
             plugin.plugin.getServer().getScheduler().runTaskLater(plugin.plugin, task, delay); 
         } catch (Exception e) {}
+    }
+
+    private void deliverCallback(Consumer<byte[]> callback, byte[] data) {
+        if (callback == null) return;
+        if (Bukkit.isPrimaryThread()) {
+            callback.accept(data);
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin.plugin, () -> callback.accept(data));
+    }
+
+    private boolean hasViaBlocksPlayersInWorld(World world) {
+        for (UUID playerId : plugin.viaBlocksEnabledPlayers) {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player != null && player.isOnline() && world.equals(player.getWorld())) {
+                return true;
+            }
+        }
+        return false;
     }
     
     public long packLocation(int x, int y, int z) {

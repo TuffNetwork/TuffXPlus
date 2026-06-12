@@ -639,6 +639,7 @@ public class Y0Plugin {
 
     public void handleChunkLoad(ChunkLoadEvent event) {
         if (enabledWorlds == null || !enabledWorlds.contains(event.getWorld().getName())) return;
+        if (!hasReadyPlayersInWorld(event.getWorld())) return;
 
         Chunk chunk = event.getChunk();
         int chunkX = chunk.getX();
@@ -885,6 +886,16 @@ public class Y0Plugin {
             out.write(ld);
             return bout.toByteArray();
         }
+    }
+
+    private boolean hasReadyPlayersInWorld(World world) {
+        for (UUID playerId : aib) {
+            Player player = plugin.getServer().getPlayer(playerId);
+            if (player != null && player.isOnline() && world.equals(player.getWorld())) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }
