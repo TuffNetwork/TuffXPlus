@@ -2,10 +2,10 @@ package tf.tuff.viablocks;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.Level;
@@ -35,13 +35,13 @@ public final class ViaBlocksPlugin {
     public static final String CLIENTBOUND_CHANNEL = "viablocks:data";
     public static final String SERVERBOUND_CHANNEL = "viablocks:handshake";
 
-    public final Set<UUID> viaBlocksEnabledPlayers = new HashSet<>();
+    public final Set<UUID> viaBlocksEnabledPlayers = ConcurrentHashMap.newKeySet();
     public CustomBlockListener blockListener;
     static ViaBlocksPlugin instance;
 
     private File playerDataFile;
     private FileConfiguration playerDataConfig;
-    private final Set<UUID> joinedPlayersCache = new HashSet<>();
+    private final Set<UUID> joinedPlayersCache = ConcurrentHashMap.newKeySet();
 
     private boolean enabled;
     private boolean debug;
@@ -206,7 +206,7 @@ public final class ViaBlocksPlugin {
         TextComponent link = new TextComponent("bug tracker");
         link.setColor(ChatColor.BLUE);
         link.setUnderlined(true);
-        link.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://github.com/TuffNetwork/ViaIssuesBlocks/issues"));
+        link.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://github.com/TuffNetwork/Tuff-Client-Builds/issues"));
         link.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder("Click to open the bug tracker!").color(ChatColor.GRAY).create()));
         TextComponent disclaimer = new TextComponent("\n\n(Bamboo and kelp are noted.)");
         disclaimer.setColor(ChatColor.DARK_GRAY);

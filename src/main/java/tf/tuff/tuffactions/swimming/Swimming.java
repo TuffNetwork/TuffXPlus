@@ -12,6 +12,7 @@ import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityToggleSwimEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.ItemStack;
 
 import tf.tuff.tuffactions.TuffActionBase;
 import tf.tuff.tuffactions.TuffActions;
@@ -56,7 +57,8 @@ public class Swimming extends TuffActionBase {
 
     public void handleElytraState(Player player, boolean isGliding) {
         if (!isEnabled()) return;
-        if (player.getInventory().getChestplate().getType() == Material.ELYTRA) player.setGliding(isGliding);
+        ItemStack chest = player.getInventory().getChestplate();
+        if (chest != null && chest.getType() == Material.ELYTRA) player.setGliding(isGliding);
     }
 
     /*** EVENT HANDLERS ***/
