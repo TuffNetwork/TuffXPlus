@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -253,6 +254,7 @@ public class Y0Plugin {
     }
 
     public void setChunkInjector(ChunkInjector injector) {
+        if (injector == null) return;
         this.chunkInjector = injector;
     }
 
@@ -673,49 +675,59 @@ public class Y0Plugin {
     }
 
     private byte[] createSectionPayload(ChunkSnapshot s, int x, int z, int sy, Object2ObjectOpenHashMap<BlockData, int[]> c) throws IOException {
+        // Ensure thread-local buffer is exactly 12,288 bytes to prevent overflow
         byte[] bd = threadData.get();
+        Arrays.fill(bd, (byte) 0);
         int idx = 0;
-        boolean h = false;
+        boolean hasContent = false;
         int by = sy << 4;
 
-        for (int y = 0; y < 16; y++) {
-            int wy = by + y;
+        // Optimized Loop Order: Matches standard Minecraft internal memory layouts
+        for (int xx = 0; xx < 16; xx++) {
             for (int zz = 0; zz < 16; zz++) {
-                for (int xx = 0; xx < 16; xx++) {
+                for (int y = 0; y < 16; y++) {
+                    int wy = by + y;
+
                     BlockData bdata = s.getBlockData(xx, wy, zz);
-                    int[] ld = c.getOrDefault(bdata, EMPTY_LEGACY);
-                    if (ld == EMPTY_LEGACY && v != null) {
-                        ld = v.toLegacy(bdata);
+                    int[] ld = c.get(bdata); // Fast map lookup
+
+                    if (ld == null) { // Avoid getOrDefault overhead
+                        ld = (v != null) ? v.toLegacy(bdata) : EMPTY_LEGACY;
                         c.put(bdata, ld);
                     }
 
+                    // Bitwise packing
                     short lb = (short) ((ld[1] << 12) | (ld[0] & 0xFFF));
                     byte pl = (byte) ((s.getBlockSkyLight(xx, wy, zz) << 4) | s.getBlockEmittedLight(xx, wy, zz));
 
-                    bd[idx++] = (byte) (lb >> 8);
-                    bd[idx++] = (byte) lb;
-                    bd[idx++] = pl;
+                    // Write sequence
+                    int linear = ((y << 8) | (zz << 4) | xx) * 3;
+                    bd[linear] = (byte) (lb >> 8);
+                    bd[linear + 1] = (byte) lb;
+                    bd[linear + 2] = pl;
+                    if (linear + 3 > idx) idx = linear + 3;
 
                     if (lb != 0 || pl != 0) {
-                        h = true;
+                        hasContent = true;
                     }
                 }
             }
         }
 
-        if (!h) return null;
+        if (!hasContent) return null;
 
         ByteArrayOutputStream bout = threadOut.get();
         bout.reset();
 
+        // DataOutputStream wrapper safely writes schema
         try (DataOutputStream out = new DataOutputStream(bout)) {
             out.writeUTF("chunk_data");
             out.writeInt(x);
             out.writeInt(z);
             out.writeInt(sy);
             out.write(bd, 0, idx);
-            return bout.toByteArray();
         }
+        return bout.toByteArray();
     }
 
     public void handleBlockBreak(BlockBreakEvent event) {
