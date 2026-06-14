@@ -31,7 +31,7 @@ dependencies {
 
     implementation 'com.github.retrooper:packetevents-spigot:2.12.1'
 
-    compileOnly 'com.viaversion:viabackwards:5.3.2'
+    compileOnly 'com.viaversion:viabackwards:5.9.1'
     compileOnly 'com.viaversion:viaversion:5.9.1'
 
     compileOnly 'it.unimi.dsi:fastutil:8.5.16'
@@ -47,7 +47,7 @@ dependencies {
 
     // Tests
     testImplementation 'com.viaversion:viaversion:5.9.1'
-    testImplementation 'com.viaversion:viabackwards:5.3.2'
+    testImplementation 'com.viaversion:viabackwards:5.9.1'
     testImplementation 'io.netty:netty-all:4.1.97.Final'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.0'
