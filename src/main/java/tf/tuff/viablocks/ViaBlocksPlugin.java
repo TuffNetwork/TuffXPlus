@@ -60,6 +60,9 @@ public final class ViaBlocksPlugin {
     }   
 
     public void onTuffXReload() {
+        Set<UUID> previouslyEnabledPlayers = ConcurrentHashMap.newKeySet();
+        previouslyEnabledPlayers.addAll(viaBlocksEnabledPlayers);
+
         loadSyncSettings();
 
         if (chunkExecutor != null) {
@@ -79,6 +82,13 @@ public final class ViaBlocksPlugin {
         }
 
         viaBlocksEnabledPlayers.clear();
+        if (enabled && blockListener != null) {
+            for (Player player : plugin.getServer().getOnlinePlayers()) {
+                if (!previouslyEnabledPlayers.contains(player.getUniqueId())) continue;
+                setPlayerEnabled(player, true);
+                blockListener.onViaBlocksPlayerJoin(player);
+            }
+        }
         
         info("ViaBlocks reloaded.");
     }

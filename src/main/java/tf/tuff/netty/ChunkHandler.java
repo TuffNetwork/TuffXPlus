@@ -314,7 +314,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
         tail.writeBytes(data);
 
         CompositeByteBuf composite = ctx.alloc().compositeBuffer();
-        composite.addComponents(true, buf.retain(), tail);
+        composite.addComponents(true, buf, tail);
 
         ctx.write(composite, promise);
     }

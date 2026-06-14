@@ -3,6 +3,7 @@ package tf.tuff.tuffactions.swimming;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -84,6 +85,7 @@ public class Swimming extends TuffActionBase {
         if (!(event.getEntity() instanceof Player)) return;
         Player player = (Player) event.getEntity();
         if (!event.isSwimming() && swimmingPlayers.contains(player.getUniqueId())) {
+            event.setCancelled(true);
             SchedulerCompat.runEntity(player, plugin, () -> {
                 if (swimmingPlayers.contains(player.getUniqueId()) && player.isOnline()) {
                     applySwimmingState(player, true);
@@ -129,10 +131,12 @@ public class Swimming extends TuffActionBase {
     }
 
     private void maintainSwimmingState() {
-        for (UUID playerId : swimmingPlayers) {
+        Iterator<UUID> iterator = swimmingPlayers.iterator();
+        while (iterator.hasNext()) {
+            UUID playerId = iterator.next();
             Player player = Bukkit.getPlayer(playerId);
             if (player == null || !player.isOnline()) {
-                swimmingPlayers.remove(playerId);
+                iterator.remove();
                 stopSwimMaintenance(playerId);
                 continue;
             }
