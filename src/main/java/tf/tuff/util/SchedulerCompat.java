@@ -73,7 +73,7 @@ public final class SchedulerCompat {
     }
 
     public static void sendPluginMessage(Plugin plugin, Player player, String channel, byte[] payload) {
-        if (player == null || payload == null || !player.isOnline()) return;
+        if (player == null || channel == null || payload == null || !player.isOnline()) return;
         runEntity(player, plugin, () -> {
             if (player.isOnline()) {
                 player.sendPluginMessage(plugin, channel, payload);

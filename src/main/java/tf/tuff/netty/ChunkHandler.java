@@ -111,13 +111,13 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
         int chunkZ = buf.readInt();
         buf.resetReaderIndex();
 
-        byte[] viaData = isViaActive() ? viaBlocks.getExtraDataForChunk(player.getWorld().getName(), chunkX, chunkZ) : null;
+        boolean viaActive = isViaActive();
+        byte[] viaData = viaActive ? viaBlocks.getExtraDataForChunk(player.getWorld().getName(), chunkX, chunkZ) : null;
         byte[] y0Data = y0 != null ? y0.getY0DataForChunk(player, chunkX, chunkZ) : null;
 
-        boolean needVia = isViaActive();
         boolean needY0 = y0 != null && y0.isPlayerReady(player);
 
-        boolean viaReady = !needVia || viaData != null;
+        boolean viaReady = !viaActive || viaData != null;
         boolean y0Ready = !needY0 || y0Data != null;
 
         if (viaReady && y0Ready) {

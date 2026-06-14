@@ -3,7 +3,6 @@ package tf.tuff.tuffactions.swimming;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -38,11 +37,6 @@ public class Swimming extends TuffActionBase {
         swimStateTasks.clear();
         swimmingPlayers.clear();
         super.disable();
-    }
-
-    @Override
-    protected void enable(boolean wasEnabled) {
-        super.enable(wasEnabled);
     }
 
     /*** CUSTOM, SERVER-BOUND PACKETS ***/
@@ -127,20 +121,6 @@ public class Swimming extends TuffActionBase {
             actsPlugin.sendPluginMessage(recipient, bout.toByteArray());
         } catch (IOException e) {
             debug("Failed to send swim state to " + recipient.getName(), e);
-        }
-    }
-
-    private void maintainSwimmingState() {
-        Iterator<UUID> iterator = swimmingPlayers.iterator();
-        while (iterator.hasNext()) {
-            UUID playerId = iterator.next();
-            Player player = Bukkit.getPlayer(playerId);
-            if (player == null || !player.isOnline()) {
-                iterator.remove();
-                stopSwimMaintenance(playerId);
-                continue;
-            }
-            SchedulerCompat.runEntity(player, plugin, () -> maintainSwimmingState(player));
         }
     }
 

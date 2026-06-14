@@ -100,10 +100,6 @@ public final class ViaBlocksPlugin {
 
         this.paletteManager = new PaletteManager(this.versionAdapter);
 
-        info(SchedulerCompat.isFolia()
-            ? "Folia detected. Using region and entity schedulers."
-            : "Using standard Bukkit-compatible schedulers.");
-
         plugin.saveDefaultConfig();
         loadSyncSettings();
         this.chunkExecutor = enabled

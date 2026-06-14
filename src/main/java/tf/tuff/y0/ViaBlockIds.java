@@ -42,7 +42,12 @@ public class ViaBlockIds {
     }
 
     private void initializeMappings() {
-        if (Via.getAPI() == null) {
+        try {
+            if (Via.getAPI() == null) {
+                plugin.severe("ViaVersion API not found! Is ViaVersion installed?");
+                return;
+            }
+        } catch (IllegalArgumentException e) {
             plugin.severe("ViaVersion API not found! Is ViaVersion installed?");
             return;
         }

@@ -426,13 +426,14 @@ public class Y0Plugin {
 
     public void processAndSendChunk(final Player player, final Chunk c) {
         if (c == null || player == null || !player.isOnline()) return;
+        if (!c.getWorld().equals(player.getWorld())) return;
 
         if (enabledWorlds != null && !enabledWorlds.contains(c.getWorld().getName())) return;
 
         final WorldChunk k = new WorldChunk(c.getWorld().getName(), c.getX(), c.getZ());
         ObjectArrayList<byte[]> cachedData = chunkCache.getIfPresent(k);
         if (cachedData != null) {
-            if (player.isOnline()) {
+            if (player.isOnline() && c.getWorld().equals(player.getWorld())) {
                 for (byte[] py : cachedData) {
                     SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, py);
                 }
@@ -857,13 +858,18 @@ public class Y0Plugin {
     }
 
     private void sendToNearbyPlayers(Location loc, byte[] payload) {
-        if (payload == null || loc.getWorld() == null) return;
+        if (payload == null || loc.getWorld() == null || aib.isEmpty()) return;
+
+        final World world = loc.getWorld();
 
         SchedulerCompat.runGlobal(plugin, () -> {
             for (Player player : Bukkit.getOnlinePlayers()) {
+                if (!player.isOnline() || !isPlayerReady(player)) continue;
+                if (!world.equals(player.getWorld())) continue;
+                if (player.getLocation().distanceSquared(loc) >= 4096) continue;
                 SchedulerCompat.runEntity(player, plugin, () -> {
-                    if (!player.isOnline()) return;
-                    if (!loc.getWorld().equals(player.getWorld())) return;
+                    if (!player.isOnline() || !isPlayerReady(player)) return;
+                    if (!world.equals(player.getWorld())) return;
                     if (player.getLocation().distanceSquared(loc) >= 4096) return;
                     player.sendPluginMessage(plugin, CHANNEL, payload);
                 });

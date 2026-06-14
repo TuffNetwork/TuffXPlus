@@ -2,7 +2,6 @@ package tf.tuff;
 
 import be.seeseemelk.mockbukkit.MockBukkit;
 import be.seeseemelk.mockbukkit.ServerMock;
-import be.seeseemelk.mockbukkit.entity.PlayerMock;
 import org.junit.jupiter.api.*;
 
 import static org.junit.jupiter.api.Assertions.*;

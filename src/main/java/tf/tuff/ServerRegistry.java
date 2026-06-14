@@ -12,7 +12,7 @@ public class ServerRegistry {
     private final String wsUrl;
     private final String server;
     private WebSocketClient client;
-    private boolean running = true;
+    private volatile boolean running = true;
 
     public ServerRegistry(JavaPlugin pl, String registryUrl, String serverAddr) {
         p = pl;
@@ -42,7 +42,7 @@ public class ServerRegistry {
                 @Override
                 public void onClose(int code, String reason, boolean remote) {
                     if (running) {
-                        SchedulerCompat.runAsyncLater(p, ServerRegistry.this::reconnect, 100L);
+                        SchedulerCompat.runAsyncLater(p, ServerRegistry.this::doConnect, 100L);
                     }
                 }
 
@@ -57,10 +57,6 @@ public class ServerRegistry {
                 SchedulerCompat.runAsyncLater(p, this::doConnect, 100L);
             }
         }
-    }
-
-    private void reconnect() {
-        doConnect();
     }
 
     public void disconnect() {
