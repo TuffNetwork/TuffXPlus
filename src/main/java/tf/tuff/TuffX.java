@@ -65,8 +65,10 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
 
     @Override
     public void onEnable() {
-        if (packetEventsEnabled) {
+        if (packetEventsEnabled && PacketEvents.getAPI() != null) {
             PacketEvents.getAPI().init();
+        } else {
+            packetEventsEnabled = false;
         }
 
         saveDefaultConfig();
@@ -124,8 +126,8 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
 
         if (packetEventsEnabled && PacketEvents.getAPI() != null) {
             PacketEvents.getAPI().terminate();
-            packetEventsEnabled = false;
         }
+        packetEventsEnabled = false;
 
         getServer().getMessenger().unregisterIncomingPluginChannel(this);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this);

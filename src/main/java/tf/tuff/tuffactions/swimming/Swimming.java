@@ -102,8 +102,12 @@ public class Swimming extends TuffActionBase {
         for (UUID otherUUID : TuffActions.tuffPlayers) {
             if (!otherUUID.equals(subject.getUniqueId())) {
                 Player recipient = Bukkit.getPlayer(otherUUID);
-                if (recipient != null && recipient.isOnline() && recipient.canSee(subject)) {
-                    sendSwimState(recipient, subject, isSwimming);
+                if (recipient != null && recipient.isOnline()) {
+                    SchedulerCompat.runEntity(recipient, plugin, () -> {
+                        if (recipient.isOnline() && recipient.canSee(subject)) {
+                            sendSwimState(recipient, subject, isSwimming);
+                        }
+                    });
                 }
             }
         }
