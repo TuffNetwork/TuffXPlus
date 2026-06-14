@@ -13,6 +13,7 @@ import org.bukkit.entity.Player;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 
+import tf.tuff.util.SchedulerCompat;
 import tf.tuff.viablocks.version.VersionAdapter;
 
 public class PaletteManager {
@@ -111,11 +112,11 @@ public class PaletteManager {
         out.writeUTF(state);
         byte[] data = out.toByteArray();
 
-        Bukkit.getScheduler().runTask(plugin.plugin, () -> {
+        SchedulerCompat.runGlobal(plugin.plugin, () -> {
             if (!plugin.plugin.isEnabled() || !plugin.isEnabled()) return;
             for (Player player : Bukkit.getOnlinePlayers()) {
                 if (plugin.isPlayerEnabled(player)) {
-                    player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
+                    SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
                 }
             }
         });

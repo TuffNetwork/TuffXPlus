@@ -29,6 +29,7 @@ import net.md_5.bungee.api.chat.TextComponent;
 import tf.tuff.viablocks.version.VersionAdapter;
 import tf.tuff.viablocks.version.modern.ModernAdapter;
 import tf.tuff.TuffX;
+import tf.tuff.util.SchedulerCompat;
 
 public final class ViaBlocksPlugin {
 
@@ -52,8 +53,6 @@ public final class ViaBlocksPlugin {
     public PaletteManager paletteManager;
     private long updateBatchDelayTicks = 1L;
     public ExecutorService chunkExecutor;
-    public boolean isPaper = false;
-
     public TuffX plugin;
 
     public ViaBlocksPlugin(TuffX plugin){
@@ -61,12 +60,17 @@ public final class ViaBlocksPlugin {
     }   
 
     public void onTuffXReload() {
+        Set<UUID> previouslyEnabledPlayers = ConcurrentHashMap.newKeySet();
+        previouslyEnabledPlayers.addAll(viaBlocksEnabledPlayers);
+
         loadSyncSettings();
 
         if (chunkExecutor != null) {
             chunkExecutor.shutdownNow();
         }
-        this.chunkExecutor = Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors()));
+        this.chunkExecutor = enabled
+            ? Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors()))
+            : null;
 
         if (playerDataFile == null) {
             playerDataFile = new File(plugin.getDataFolder(), "players.yml");
@@ -76,6 +80,15 @@ public final class ViaBlocksPlugin {
         if (blockListener != null) {
             blockListener.clearCache();
         }
+
+        viaBlocksEnabledPlayers.clear();
+        if (enabled && blockListener != null) {
+            for (Player player : plugin.getServer().getOnlinePlayers()) {
+                if (!previouslyEnabledPlayers.contains(player.getUniqueId())) continue;
+                setPlayerEnabled(player, true);
+                blockListener.onViaBlocksPlayerJoin(player);
+            }
+        }
         
         info("ViaBlocks reloaded.");
     }
@@ -83,23 +96,15 @@ public final class ViaBlocksPlugin {
     public void onTuffXEnable() {
         instance = this;
 
-        this.chunkExecutor = Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors()));
-
         this.versionAdapter = new ModernAdapter();
 
         this.paletteManager = new PaletteManager(this.versionAdapter);
 
-        try {
-            Class.forName("io.papermc.paper.threadedregions.scheduler.AsyncScheduler");
-            this.isPaper = true;
-            info("Paper detected. Enabling optimized asynchronous scheduling.");
-        } catch (ClassNotFoundException e) {
-            this.isPaper = false;
-            info("Running on Spigot/Bukkit. Using standard scheduler.");
-        }
-
         plugin.saveDefaultConfig();
         loadSyncSettings();
+        this.chunkExecutor = enabled
+            ? Executors.newFixedThreadPool(Math.max(1, Runtime.getRuntime().availableProcessors()))
+            : null;
         setupPlayerData();
            
 
@@ -109,10 +114,15 @@ public final class ViaBlocksPlugin {
         this.blockListener = new CustomBlockListener(this, this.versionAdapter, this.paletteManager);
 
         plugin.getCommand("viablocks").setExecutor(plugin);
-        info("ViaBlocks has been enabled successfully and is listening for client handshakes.");
+        if (enabled) {
+            info("ViaBlocks has been enabled successfully and is listening for client handshakes.");
+        } else {
+            info("ViaBlocks is disabled in config.");
+        }
     }
 
     public void handlePacket(Player player, byte[] message) {
+        if (!isEnabled() || blockListener == null) return;
         if (!isPlayerEnabled(player) && isEnabled()) {
             debug("Received ViaBlocks handshake from player: " + player.getName() + ". Enabling custom blocks.");
             setPlayerEnabled(player, true);
@@ -149,6 +159,8 @@ public final class ViaBlocksPlugin {
             chunkExecutor.shutdownNow();
             chunkExecutor = null;
         }
+
+        viaBlocksEnabledPlayers.clear();
 
         info("ViaBlocks has been disabled.");
     }
@@ -213,7 +225,7 @@ public final class ViaBlocksPlugin {
         disclaimer.setItalic(true);
         meta.spigot().addPage(new ComponentBuilder("").append(welcome).append(body).append(link).append(new TextComponent(".")).append(disclaimer).create());
         book.setItemMeta(meta);
-        plugin.getServer().getScheduler().runTask(plugin, () -> player.openBook(book));
+        SchedulerCompat.runEntity(player, plugin, () -> player.openBook(book));
     }
 
     public boolean isEnabled() {
@@ -255,6 +267,10 @@ public final class ViaBlocksPlugin {
             } else if (args[0].equalsIgnoreCase("refresh")) {
                 if (!player.hasPermission("tuffx.viablocks.command.refresh")) {
                     player.sendMessage("\u00A7cYou do not have permission to use this command.");
+                    return true;
+                }
+                if (!isEnabled() || blockListener == null) {
+                    player.sendMessage("\u00A7cViaBlocks is disabled.");
                     return true;
                 }
                 player.sendMessage("\u00A7aRefreshing modern blocks in your view distance...");

@@ -19,6 +19,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import tf.tuff.util.SchedulerCompat;
+
 public class CreativeMenu extends TuffActionBase {
     private final Set<String> itemMapping = ConcurrentHashMap.newKeySet();
     private final Map<UUID, ItemStack> playerHoldingPlaceholder = new ConcurrentHashMap<>();
@@ -99,7 +101,7 @@ public class CreativeMenu extends TuffActionBase {
             InventoryAction action = event.getAction();
             if (action == InventoryAction.PLACE_ALL || action == InventoryAction.PLACE_ONE || action == InventoryAction.SWAP_WITH_CURSOR) {
 
-                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                SchedulerCompat.runEntityLater(player, plugin, () -> {
                     ItemStack realItemStack = playerHoldingPlaceholder.get(playerUUID);
 
                     if (realItemStack != null && event.getClickedInventory() != null) {

@@ -5,12 +5,14 @@ import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.handshake.ServerHandshake;
 import java.net.URI;
 
+import tf.tuff.util.SchedulerCompat;
+
 public class ServerRegistry {
     private final JavaPlugin p;
     private final String wsUrl;
     private final String server;
     private WebSocketClient client;
-    private boolean running = true;
+    private volatile boolean running = true;
 
     public ServerRegistry(JavaPlugin pl, String registryUrl, String serverAddr) {
         p = pl;
@@ -19,7 +21,7 @@ public class ServerRegistry {
     }
 
     public void connect() {
-        p.getServer().getScheduler().runTaskAsynchronously(p, this::doConnect);
+        SchedulerCompat.runAsync(p, this::doConnect);
     }
 
     private void doConnect() {
@@ -40,7 +42,7 @@ public class ServerRegistry {
                 @Override
                 public void onClose(int code, String reason, boolean remote) {
                     if (running) {
-                        p.getServer().getScheduler().runTaskLaterAsynchronously(p, () -> doConnect(), 100L);
+                        SchedulerCompat.runAsyncLater(p, ServerRegistry.this::doConnect, 100L);
                     }
                 }
 
@@ -52,7 +54,7 @@ public class ServerRegistry {
             client.connect();
         } catch (Exception e) {
             if (running) {
-                p.getServer().getScheduler().runTaskLaterAsynchronously(p, () -> doConnect(), 100L);
+                SchedulerCompat.runAsyncLater(p, this::doConnect, 100L);
             }
         }
     }

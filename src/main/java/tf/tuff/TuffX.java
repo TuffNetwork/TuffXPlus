@@ -26,6 +26,7 @@ import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder
 
 import tf.tuff.netty.ChunkInjector;
 import tf.tuff.tuffactions.TuffActions;
+import tf.tuff.util.SchedulerCompat;
 import tf.tuff.viablocks.ViaBlocksPlugin;
 import tf.tuff.viaentities.ViaEntitiesPlugin;
 import tf.tuff.y0.Y0Plugin;
@@ -39,6 +40,7 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     public TuffActions tuffActions;
     public ViaEntitiesPlugin viaEntitiesPlugin;
     private ChunkInjector chunkInjector;
+    private boolean packetEventsEnabled;
 
     // required by MockBukkit
     public TuffX(JavaPluginLoader loader, PluginDescriptionFile description, File dataFolder, File file) {
@@ -52,17 +54,28 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         this.tuffActions = new TuffActions(this);
         this.viaEntitiesPlugin = new ViaEntitiesPlugin(this);
 
-        PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
-        PacketEvents.getAPI().getSettings().reEncodeByDefault(false)
-                .checkForUpdates(false);
-        PacketEvents.getAPI().load();
+        if (shouldBootstrapPacketEvents()) {
+            PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
+            PacketEvents.getAPI().getSettings().reEncodeByDefault(false)
+                    .checkForUpdates(false);
+            PacketEvents.getAPI().load();
+            packetEventsEnabled = true;
+        }
     }
 
     @Override
     public void onEnable() {
-        PacketEvents.getAPI().init();
+        if (packetEventsEnabled && PacketEvents.getAPI() != null) {
+            PacketEvents.getAPI().init();
+        } else {
+            packetEventsEnabled = false;
+        }
 
         saveDefaultConfig();
+
+        getLogger().info(SchedulerCompat.isFolia()
+            ? "Folia detected. Using region and entity schedulers."
+            : "Using standard Bukkit-compatible schedulers.");
 
         y0Plugin.onTuffXEnable();
         tuffActions.onTuffXEnable();
@@ -76,9 +89,11 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         getConfig().options().copyDefaults(true);
         saveConfig();
 
-        PacketEvents.getAPI().getEventManager().registerListener(
-            new NetworkListener(this), PacketListenerPriority.NORMAL
-        );
+        if (packetEventsEnabled) {
+            PacketEvents.getAPI().getEventManager().registerListener(
+                new NetworkListener(this), PacketListenerPriority.NORMAL
+            );
+        }
 
         getServer().getPluginManager().registerEvents(this, this);
 
@@ -109,10 +124,18 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
             serverRegistry = null;
         }
 
-        PacketEvents.getAPI().terminate();
+        if (packetEventsEnabled && PacketEvents.getAPI() != null) {
+            PacketEvents.getAPI().terminate();
+        }
+        packetEventsEnabled = false;
 
         getServer().getMessenger().unregisterIncomingPluginChannel(this);
         getServer().getMessenger().unregisterOutgoingPluginChannel(this);
+    }
+
+    private boolean shouldBootstrapPacketEvents() {
+        return getServer() == null
+            || !getServer().getClass().getName().startsWith("be.seeseemelk.mockbukkit");
     }
 
     public void reloadTuffX(){

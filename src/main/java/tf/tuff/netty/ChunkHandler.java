@@ -10,6 +10,7 @@ import org.bukkit.World;
 import org.bukkit.entity.Player;
 import tf.tuff.viablocks.CustomBlockListener;
 import tf.tuff.y0.Y0Plugin;
+import tf.tuff.util.SchedulerCompat;
 
 import java.util.Map;
 import java.util.UUID;
@@ -26,6 +27,8 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
     private volatile ChannelHandlerContext ctx;
 
     private static final long TIMEOUT_MS = 500;
+
+    static record BlockChangePosition(int x, int y, int z) {}
 
     public ChunkHandler(CustomBlockListener viaBlocks, Y0Plugin y0, Player player) {
         this.viaBlocks = viaBlocks;
@@ -77,12 +80,12 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
                 return;
             }
 
-            if (packetId == 0x0B && viaBlocks != null) {
+            if (packetId == 0x0B && isViaActive()) {
                 handleBlockChange(ctx, buf, promise);
                 return;
             }
 
-            if (packetId == 0x10 && viaBlocks != null) {
+            if (packetId == 0x10 && isViaActive()) {
                 handleMultiBlockChange(ctx, buf, promise);
                 return;
             }
@@ -97,18 +100,24 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
         super.write(ctx, msg, promise);
     }
 
+    private boolean isViaActive() {
+        return viaBlocks != null
+            && viaBlocks.plugin.isEnabled()
+            && viaBlocks.plugin.isPlayerEnabled(player);
+    }
+
     private void handleChunkPacket(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise) throws Exception {
         int chunkX = buf.readInt();
         int chunkZ = buf.readInt();
         buf.resetReaderIndex();
 
-        byte[] viaData = viaBlocks != null ? viaBlocks.getExtraDataForChunk(player.getWorld().getName(), chunkX, chunkZ) : null;
+        boolean viaActive = isViaActive();
+        byte[] viaData = viaActive ? viaBlocks.getExtraDataForChunk(player.getWorld().getName(), chunkX, chunkZ) : null;
         byte[] y0Data = y0 != null ? y0.getY0DataForChunk(player, chunkX, chunkZ) : null;
 
-        boolean needVia = viaBlocks != null;
         boolean needY0 = y0 != null && y0.isPlayerReady(player);
 
-        boolean viaReady = !needVia || viaData != null;
+        boolean viaReady = !viaActive || viaData != null;
         boolean y0Ready = !needY0 || y0Data != null;
 
         if (viaReady && y0Ready) {
@@ -135,67 +144,68 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
     }
 
     private void handleBlockChange(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise) throws Exception {
-        int idx = buf.readerIndex();
-        long val = buf.getLong(idx);
-        int x = (int) (val >> 38);
-        int z = (int) ((val >> 12) & 0x3FFFFFF);
-        int y = (int) (val & 0xFFF);
-        if (x >= 0x2000000) x -= 0x4000000;
-        if (z >= 0x2000000) z -= 0x4000000;
-        if (y >= 0x800) y -= 0x1000;
-
-        World world = player.getWorld();
-
-        // end this call if the chunk called upon is not loaded
-        // it seems like it should never happen, but it does, and it causes crashes.
-        if (!world.isChunkLoaded(x >> 4, z >> 4)) {
-            buf.resetReaderIndex();
-            super.write(ctx, buf, promise);
-            return;
-        }
-
-        byte[] data = viaBlocks.getExtraDataForSingleBlock(world, x, y, z);
-        if (data != null && data.length > 0) {
-            buf.resetReaderIndex();
-            writeWithViaOnly(ctx, buf, promise, data);
-            return;
-        }
-        buf.resetReaderIndex();
-        super.write(ctx, buf, promise);
+        BlockChangePosition position = decodeSingleBlockChangePosition(buf.getLong(buf.readerIndex()));
+        resolveViaDataOnRegionThread(ctx, buf, promise, player.getWorld(), position.x >> 4, position.z >> 4, () -> {
+            World world = player.getWorld();
+            if (!world.isChunkLoaded(position.x >> 4, position.z >> 4)) {
+                return null;
+            }
+            return viaBlocks.getExtraDataForSingleBlock(world, position.x, position.y, position.z);
+        });
     }
 
     private void handleMultiBlockChange(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise) throws Exception {
         buf.resetReaderIndex();
         buf.skipBytes(varIntLen(buf));
         long chunkSectionPos = buf.readLong();
-        int cx = (int)(chunkSectionPos >> 42);
-        int cz = (int)((chunkSectionPos << 44) >> 44);
-
-        if (Math.abs(cx) < 2000000 && Math.abs(cz) < 2000000) {
-            buf.readBoolean();
-            int count = readVarInt(buf);
-            java.util.List<Long> locs = new java.util.ArrayList<>();
-            for (int i = 0; i < count; i++) {
-                short h = buf.readUnsignedByte();
-                int by = buf.readUnsignedByte();
-                readVarInt(buf);
-                int bx = (h >> 4 & 15) + (cx * 16);
-                int bz = (h & 15) + (cz * 16);
-                locs.add(viaBlocks.packLocation(bx, by, bz));
-            }
-            byte[] data = viaBlocks.getExtraDataForMultiBlock(player.getWorld(), locs);
-            if (data != null && data.length > 0) {
-                buf.resetReaderIndex();
-                writeWithViaOnly(ctx, buf, promise, data);
-                return;
-            }
+        int cx = decodeSectionCoordX(chunkSectionPos);
+        int cz = decodeSectionCoordZ(chunkSectionPos);
+        buf.readBoolean();
+        int count = readVarInt(buf);
+        java.util.List<Long> locs = new java.util.ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            BlockChangePosition position = decodeMultiBlockChangePosition(chunkSectionPos, readVarLong(buf));
+            locs.add(viaBlocks.packLocation(position.x, position.y, position.z));
         }
-        buf.resetReaderIndex();
-        super.write(ctx, buf, promise);
+
+        resolveViaDataOnRegionThread(ctx, buf, promise, player.getWorld(), cx, cz, () -> viaBlocks.getExtraDataForMultiBlock(player.getWorld(), locs));
+    }
+
+    private void resolveViaDataOnRegionThread(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
+                                              World world, int chunkX, int chunkZ,
+                                              java.util.concurrent.Callable<byte[]> supplier) {
+        ByteBuf retained = buf.retain();
+        SchedulerCompat.runRegion(viaBlocks.plugin.plugin, world, chunkX, chunkZ, () -> {
+            byte[] data = null;
+            try {
+                if (player.isOnline() && isViaActive()) {
+                    data = supplier.call();
+                }
+            } catch (Exception ignored) {
+            }
+            final byte[] resolvedData = data;
+
+            ChannelHandlerContext currentCtx = this.ctx != null ? this.ctx : ctx;
+            currentCtx.channel().eventLoop().execute(() -> {
+                try {
+                    retained.resetReaderIndex();
+                    if (resolvedData != null && resolvedData.length > 0) {
+                        writeWithViaOnly(currentCtx, retained, promise, resolvedData);
+                    } else {
+                        currentCtx.write(retained, promise);
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    if (retained.refCnt() > 0) {
+                        retained.release();
+                    }
+                }
+            });
+        });
     }
 
     private void requestViaCache(int cx, int cz, long key) {
-        Bukkit.getScheduler().runTask(viaBlocks.plugin.plugin, () -> {
+        SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
             if (!player.isOnline()) {
                 release(key);
                 return;
@@ -212,7 +222,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
     }
 
     private void requestY0Cache(int cx, int cz, long key) {
-        Bukkit.getScheduler().runTask(viaBlocks.plugin.plugin, () -> {
+        SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
             if (!player.isOnline()) {
                 release(key);
                 return;
@@ -304,7 +314,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
         tail.writeBytes(data);
 
         CompositeByteBuf composite = ctx.alloc().compositeBuffer();
-        composite.addComponents(true, buf.retain(), tail);
+        composite.addComponents(true, buf, tail);
 
         ctx.write(composite, promise);
     }
@@ -323,6 +333,58 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
             if (n > 5) throw new RuntimeException("VarInt too big");
         } while ((b & 0x80) != 0);
         return r;
+    }
+
+    private long readVarLong(ByteBuf buf) {
+        long value = 0L;
+        int position = 0;
+        byte currentByte;
+        do {
+            currentByte = buf.readByte();
+            value |= (long) (currentByte & 0x7F) << position;
+            position += 7;
+            if (position > 70) {
+                throw new RuntimeException("VarLong too big");
+            }
+        } while ((currentByte & 0x80) != 0);
+        return value;
+    }
+
+    static BlockChangePosition decodeSingleBlockChangePosition(long value) {
+        int x = decodeSigned((int) (value >> 38), 26);
+        int z = decodeSigned((int) ((value >> 12) & 0x3FFFFFFL), 26);
+        int y = decodeSigned((int) (value & 0xFFFL), 12);
+        return new BlockChangePosition(x, y, z);
+    }
+
+    static BlockChangePosition decodeMultiBlockChangePosition(long sectionPosition, long entry) {
+        int sectionX = decodeSectionCoordX(sectionPosition);
+        int sectionY = decodeSectionCoordY(sectionPosition);
+        int sectionZ = decodeSectionCoordZ(sectionPosition);
+        int localPosition = (int) (entry & 0xFFFL);
+        int x = (sectionX << 4) | ((localPosition >> 8) & 0xF);
+        int z = (sectionZ << 4) | ((localPosition >> 4) & 0xF);
+        int y = (sectionY << 4) | (localPosition & 0xF);
+        return new BlockChangePosition(x, y, z);
+    }
+
+    private static int decodeSectionCoordX(long sectionPosition) {
+        return decodeSigned((int) (sectionPosition >> 42), 22);
+    }
+
+    private static int decodeSectionCoordY(long sectionPosition) {
+        return decodeSigned((int) (sectionPosition & 0xFFFFFL), 20);
+    }
+
+    private static int decodeSectionCoordZ(long sectionPosition) {
+        return decodeSigned((int) ((sectionPosition >> 20) & 0x3FFFFFL), 22);
+    }
+
+    private static int decodeSigned(int value, int bits) {
+        int signBit = 1 << (bits - 1);
+        int fullMask = (1 << bits) - 1;
+        value &= fullMask;
+        return (value ^ signBit) - signBit;
     }
 
     private int varIntLen(ByteBuf buf) {

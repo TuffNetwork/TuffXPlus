@@ -46,13 +46,15 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
 
     // Tests
-    testImplementation 'com.viaversion:viaversion:5.9.1'
-    testImplementation 'com.viaversion:viabackwards:5.3.2'
-    testImplementation 'io.netty:netty-all:4.1.97.Final'
+    testImplementation 'com.github.seeseemelk:MockBukkit-v1.18:2.85.2'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.0'
-    testImplementation 'com.github.seeseemelk:MockBukkit-v1.18:2.85.2'
+    testRuntimeOnly 'org.spigotmc:spigot-api:1.18.2-R0.1-SNAPSHOT'
+    testRuntimeOnly 'io.netty:netty-all:4.1.97.Final'
+    testRuntimeOnly 'it.unimi.dsi:fastutil:8.5.16'
+    testRuntimeOnly 'com.viaversion:viaversion:5.9.1'
+    testRuntimeOnly 'com.viaversion:viabackwards:5.3.2'
 }
 
 processResources {

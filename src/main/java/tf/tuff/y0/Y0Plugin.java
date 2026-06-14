@@ -21,6 +21,7 @@ import java.util.function.Consumer;
 import java.util.logging.Level;
 import javax.annotation.Nonnull;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
@@ -48,6 +49,7 @@ import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 
 import tf.tuff.TuffX;
 import tf.tuff.netty.ChunkInjector;
+import tf.tuff.util.SchedulerCompat;
 
 public class Y0Plugin {
 
@@ -273,7 +275,7 @@ public class Y0Plugin {
 
     private void handlePacket(Player player, String subchannel) {
         if (!enabledWorlds.contains(player.getWorld().getName()) && !subchannel.equalsIgnoreCase("ready")) {
-            player.sendPluginMessage(plugin, CHANNEL, y0StatusPkt(false));
+            SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, y0StatusPkt(false));
             return;
         }
 
@@ -287,10 +289,10 @@ public class Y0Plugin {
                     if (chunkInjector != null) {
                         chunkInjector.inject(player);
                     }
-                    player.sendPluginMessage(plugin, CHANNEL, y0StatusPkt(true));
+                    SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, y0StatusPkt(true));
                     resendChunksInView(player);
                 } else {
-                    player.sendPluginMessage(plugin, CHANNEL, y0StatusPkt(false));
+                    SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, y0StatusPkt(false));
                 }
                 break;
             case "use_on_block":
@@ -375,15 +377,16 @@ public class Y0Plugin {
             ObjectArrayList<byte[]> cachedData = chunkCache.getIfPresent(k);
             if (cachedData != null && !cachedData.isEmpty()) {
                 for (byte[] py : cachedData) {
-                    player.sendPluginMessage(plugin, CHANNEL, py);
+                    SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, py);
                 }
             }
         }
 
         if (endIndex < chunks.size()) {
             final int nextStart = endIndex;
-            plugin.getServer().getScheduler().runTaskLater(plugin, () ->
-                sendY0ChunksBatched(player, worldName, chunks, nextStart), 1);
+            if (player.isOnline()) {
+                SchedulerCompat.runEntityLater(player, plugin, () -> sendY0ChunksBatched(player, worldName, chunks, nextStart), 1L);
+            }
         }
     }
 
@@ -406,9 +409,9 @@ public class Y0Plugin {
 
     public void handlePlayerChangeWorld(PlayerChangedWorldEvent event) {
         Player player = event.getPlayer();
-        player.sendPluginMessage(plugin, CHANNEL, dimensionChangePkt());
+        SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, dimensionChangePkt());
         boolean isEnabledWorld = enabledWorlds.contains(player.getWorld().getName());
-        player.sendPluginMessage(plugin, CHANNEL, y0StatusPkt(isEnabledWorld));
+        SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, y0StatusPkt(isEnabledWorld));
         if (isPlayerReady(player) && isEnabledWorld) {
             resendChunksInView(player);
         }
@@ -416,22 +419,23 @@ public class Y0Plugin {
 
     public void handlePlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        player.sendPluginMessage(plugin, CHANNEL, dimensionChangePkt());
+        SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, dimensionChangePkt());
         boolean isEnabledWorld = enabledWorlds.contains(player.getWorld().getName());
-        player.sendPluginMessage(plugin, CHANNEL, y0StatusPkt(isEnabledWorld));
+        SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, y0StatusPkt(isEnabledWorld));
     }
 
     public void processAndSendChunk(final Player player, final Chunk c) {
         if (c == null || player == null || !player.isOnline()) return;
+        if (!c.getWorld().equals(player.getWorld())) return;
 
         if (enabledWorlds != null && !enabledWorlds.contains(c.getWorld().getName())) return;
 
         final WorldChunk k = new WorldChunk(c.getWorld().getName(), c.getX(), c.getZ());
         ObjectArrayList<byte[]> cachedData = chunkCache.getIfPresent(k);
         if (cachedData != null) {
-            if (player.isOnline()) {
+            if (player.isOnline() && c.getWorld().equals(player.getWorld())) {
                 for (byte[] py : cachedData) {
-                    player.sendPluginMessage(plugin, CHANNEL, py);
+                    SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, py);
                 }
             }
             return;
@@ -467,13 +471,9 @@ public class Y0Plugin {
             chunkCache.put(k, pp);
             storeCombined(k, pp);
             if (!pp.isEmpty()) {
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    if (player.isOnline()) {
-                        for (byte[] py : pp) {
-                            player.sendPluginMessage(plugin, CHANNEL, py);
-                        }
-                    }
-                });
+                for (byte[] py : pp) {
+                    SchedulerCompat.sendPluginMessage(plugin, player, CHANNEL, py);
+                }
             }
         });
     }
@@ -641,6 +641,7 @@ public class Y0Plugin {
 
     public void handleChunkLoad(ChunkLoadEvent event) {
         if (enabledWorlds == null || !enabledWorlds.contains(event.getWorld().getName())) return;
+        if (!hasReadyPlayersInWorld(event.getWorld())) return;
 
         Chunk chunk = event.getChunk();
         int chunkX = chunk.getX();
@@ -727,7 +728,6 @@ public class Y0Plugin {
             out.writeInt(sy);
             out.write(bd, 0, idx);
         }
-
         return bout.toByteArray();
     }
 
@@ -750,37 +750,33 @@ public class Y0Plugin {
         if (block.getY() < 0) {
             final Location loc = block.getLocation();
             final World world = loc.getWorld();
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
+            SchedulerCompat.runRegionLater(plugin, loc, () -> {
                 BlockData ud = world.getBlockData(loc);
                 sendSingleBlockUpdate(loc, ud);
                 invalidateChunkCache(world, loc.getBlockX(), loc.getBlockZ());
-            });
+            }, 1L);
         }
     }
 
     public void handleBlockExplode(BlockExplodeEvent event) {
-        final ObjectOpenHashSet<WorldChunk> ac = new ObjectOpenHashSet<>();
         final List<Block> btu = new ArrayList<>(event.blockList());
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
-            for (Block block : btu) {
-                if (block.getY() < 0) {
-                    sendSingleBlockUpdate(block.getLocation(), Material.AIR.createBlockData());
-                    ac.add(new WorldChunk(block.getWorld().getName(), block.getX() >> 4, block.getZ() >> 4));
-                }
-            }
-            if (!ac.isEmpty()) {
-                ac.forEach(chunkCache::invalidate);
-            }
-        });
+        for (Block block : btu) {
+            if (block.getY() >= 0) continue;
+            final Location loc = block.getLocation();
+            SchedulerCompat.runRegionLater(plugin, loc, () -> {
+                sendSingleBlockUpdate(loc, Material.AIR.createBlockData());
+                invalidateChunkCache(loc.getWorld(), loc.getBlockX(), loc.getBlockZ());
+            }, 1L);
+        }
     }
 
     public void handleBlockFromTo(BlockFromToEvent event) {
         final Block block = event.getToBlock();
         if (block.getY() < 0) {
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
+            SchedulerCompat.runRegionLater(plugin, block.getLocation(), () -> {
                 sendSingleBlockUpdate(block.getLocation(), block.getBlockData());
                 invalidateChunkCache(block.getWorld(), block.getX(), block.getZ());
-            });
+            }, 1L);
         }
     }
 
@@ -797,13 +793,7 @@ public class Y0Plugin {
             out.writeShort((short) ((ld[1] << 12) | (ld[0] & 0xFFF)));
             byte[] py = bout.toByteArray();
 
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                for (Player player : loc.getWorld().getPlayers()) {
-                    if (player.getLocation().distanceSquared(loc) < 4096) {
-                        player.sendPluginMessage(plugin, CHANNEL, py);
-                    }
-                }
-            });
+            sendToNearbyPlayers(loc, py);
 
         } catch (IOException e) {
             severe("Failed to create single block update payload: " + e.getMessage());
@@ -858,19 +848,33 @@ public class Y0Plugin {
                 chunkProcessor.submit(() -> {
                     try {
                         byte[] py = createLightPayload(s, sc);
-                        plugin.getServer().getScheduler().runTask(plugin, () -> {
-                            for (Player player : w.getPlayers()) {
-                                if (player.isOnline() && player.getLocation().distanceSquared(loc) < 4096) {
-                                    player.sendPluginMessage(plugin, CHANNEL, py);
-                                }
-                            }
-                        });
+                        sendToNearbyPlayers(loc, py);
                     } catch (IOException e) {
                         severe("Failed to create lighting payload: " + e.getMessage());
                     }
                 });
             }
         }
+    }
+
+    private void sendToNearbyPlayers(Location loc, byte[] payload) {
+        if (payload == null || loc.getWorld() == null || aib.isEmpty()) return;
+
+        final World world = loc.getWorld();
+
+        SchedulerCompat.runGlobal(plugin, () -> {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (!player.isOnline() || !isPlayerReady(player)) continue;
+                if (!world.equals(player.getWorld())) continue;
+                if (player.getLocation().distanceSquared(loc) >= 4096) continue;
+                SchedulerCompat.runEntity(player, plugin, () -> {
+                    if (!player.isOnline() || !isPlayerReady(player)) return;
+                    if (!world.equals(player.getWorld())) return;
+                    if (player.getLocation().distanceSquared(loc) >= 4096) return;
+                    player.sendPluginMessage(plugin, CHANNEL, payload);
+                });
+            }
+        });
     }
 
     private byte[] createLightPayload(ChunkSnapshot s, Coords sc) throws IOException {
@@ -898,6 +902,16 @@ public class Y0Plugin {
             out.write(ld);
             return bout.toByteArray();
         }
+    }
+
+    private boolean hasReadyPlayersInWorld(World world) {
+        for (UUID playerId : aib) {
+            Player player = plugin.getServer().getPlayer(playerId);
+            if (player != null && player.isOnline() && world.equals(player.getWorld())) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

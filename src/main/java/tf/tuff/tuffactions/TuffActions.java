@@ -129,7 +129,7 @@ public class TuffActions {
     }
 
     public void sendPluginMessage(Player player, String channel, byte[] payload) {
-        if (player == null || payload == null || !player.isOnline() || !PacketEvents.getAPI().isInitialized()) return;
+        if (player == null || payload == null || !player.isOnline() || PacketEvents.getAPI() == null || !PacketEvents.getAPI().isInitialized()) return;
         WrapperPlayServerPluginMessage packet = new WrapperPlayServerPluginMessage(channel, payload);
         PacketEvents.getAPI().getPlayerManager().sendPacket(player, packet);
     }

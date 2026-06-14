@@ -8,6 +8,8 @@ import org.bukkit.entity.Player;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 
+import tf.tuff.util.SchedulerCompat;
+
 public class EntityDataHandler extends ChannelOutboundHandlerAdapter {
 
     private final ViaEntitiesPlugin plugin;
@@ -321,7 +323,7 @@ public class EntityDataHandler extends ChannelOutboundHandlerAdapter {
         out.writeFloat(pitch);
 
         byte[] data = out.toByteArray();
-        player.sendPluginMessage(plugin.plugin, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, data);
+        SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, data);
     }
 
     private void sendEntityMetadata(int entityId, Object packedItems) {
@@ -368,7 +370,7 @@ public class EntityDataHandler extends ChannelOutboundHandlerAdapter {
             }
 
             byte[] data = out.toByteArray();
-            player.sendPluginMessage(plugin.plugin, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, data);
+            SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, data);
         } catch (Exception e) {
         }
     }
@@ -382,7 +384,7 @@ public class EntityDataHandler extends ChannelOutboundHandlerAdapter {
         out.writeInt(animationType);
 
         byte[] data = out.toByteArray();
-        player.sendPluginMessage(plugin.plugin, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, data);
+        SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, data);
     }
 
     private void sendEntityDestroy(int entityId) {
@@ -393,6 +395,6 @@ public class EntityDataHandler extends ChannelOutboundHandlerAdapter {
         out.writeInt(entityId);
 
         byte[] data = out.toByteArray();
-        player.sendPluginMessage(plugin.plugin, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, data);
+        SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaEntitiesPlugin.CLIENTBOUND_CHANNEL, data);
     }
 }
