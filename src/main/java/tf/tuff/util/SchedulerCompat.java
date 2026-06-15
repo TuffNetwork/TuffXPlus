@@ -8,7 +8,6 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
-import io.github.retrooper.packetevents.util.FoliaCompatUtil;
 import io.github.retrooper.packetevents.util.folia.FoliaScheduler;
 import io.github.retrooper.packetevents.util.folia.TaskWrapper;
 
@@ -18,7 +17,7 @@ public final class SchedulerCompat {
     }
 
     public static boolean isFolia() {
-        return FoliaCompatUtil.isFolia();
+        return FoliaScheduler.isFolia();
     }
 
     public static void runGlobal(Plugin plugin, Runnable task) {
@@ -34,7 +33,7 @@ public final class SchedulerCompat {
     }
 
     public static void runAsync(Plugin plugin, Runnable task) {
-        FoliaCompatUtil.runTaskAsync(plugin, task);
+        FoliaScheduler.getAsyncScheduler().runNow(plugin, scheduledTask -> task.run());
     }
 
     public static TaskWrapper runAsyncLater(Plugin plugin, Runnable task, long delayTicks) {
@@ -58,7 +57,7 @@ public final class SchedulerCompat {
     }
 
     public static void runEntity(Entity entity, Plugin plugin, Runnable task) {
-        FoliaCompatUtil.runTaskForEntity(entity, plugin, task, () -> {
+        FoliaScheduler.getEntityScheduler().execute(entity, plugin, task, () -> {
         }, 0L);
     }
 
