@@ -46,6 +46,7 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     public TuffX(JavaPluginLoader loader, PluginDescriptionFile description, File dataFolder, File file) {
         super(loader, description, dataFolder, file);
     }
+    public TuffX() { super(); }
 
     @Override
     public void onLoad() {
