@@ -9,7 +9,7 @@ public class ServerRegistry {
     private final String wsUrl;
     private final String server;
     private WebSocketClient client;
-    private boolean running = true;
+    private volatile boolean running = true;
 
     public ServerRegistry(TuffX pl, String registryUrl, String serverAddr) {
         p = pl;
