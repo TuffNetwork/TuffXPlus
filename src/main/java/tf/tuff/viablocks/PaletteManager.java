@@ -111,12 +111,14 @@ public class PaletteManager {
         out.writeUTF(state);
         byte[] data = out.toByteArray();
 
-        Bukkit.getScheduler().runTask(plugin.plugin, () -> {
+        plugin.plugin.foliaLib.getScheduler().runNextTick(gt -> {
             if (!plugin.plugin.isEnabled() || !plugin.isEnabled()) return;
             for (Player player : Bukkit.getOnlinePlayers()) {
-                if (plugin.isPlayerEnabled(player)) {
-                    player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
-                }
+                plugin.plugin.foliaLib.getScheduler().runAtEntity(player, t -> {
+                    if (plugin.isPlayerEnabled(player)) {
+                        player.sendPluginMessage(plugin.plugin, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, data);
+                    }
+                });
             }
         });
     }

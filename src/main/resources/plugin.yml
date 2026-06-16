@@ -4,6 +4,7 @@ main: tf.tuff.TuffX
 author: Potato
 authors: [Potato, SyntaxSavy, llucasandersen, coleis1op, UplandJacob]
 api-version: 1.18
+folia-supported: true
 depend: [ViaVersion, ViaBackwards]
 
 commands:

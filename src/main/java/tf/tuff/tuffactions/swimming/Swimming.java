@@ -34,7 +34,7 @@ public class Swimming extends TuffActionBase {
     /*** CUSTOM, SERVER-BOUND PACKETS ***/
     public void handleSwimReady(Player player) {
         if (!isEnabled()) return;
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+        plugin.foliaLib.getScheduler().runAtEntityLater(player, t -> {
             for (UUID swimmingPlayerId : swimmingPlayers) {
                 Player swimmingPlayer = Bukkit.getPlayer(swimmingPlayerId);
                 if (swimmingPlayer != null && swimmingPlayer.isOnline() && player.canSee(swimmingPlayer)) {

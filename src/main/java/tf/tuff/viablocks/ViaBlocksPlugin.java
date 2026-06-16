@@ -89,13 +89,13 @@ public final class ViaBlocksPlugin {
 
         this.paletteManager = new PaletteManager(this.versionAdapter);
 
-        try {
-            Class.forName("io.papermc.paper.threadedregions.scheduler.AsyncScheduler");
-            this.isPaper = true;
-            info("Paper detected. Enabling optimized asynchronous scheduling.");
-        } catch (ClassNotFoundException e) {
-            this.isPaper = false;
-            info("Running on Spigot/Bukkit. Using standard scheduler.");
+        this.isPaper = plugin.foliaLib.isPaper();
+        if (plugin.foliaLib.isFolia()) {
+            info("Folia detected. Using region-threaded scheduling.");
+        } else if (this.isPaper) {
+            info("Paper detected. Using standard scheduling.");
+        } else {
+            info("Running on Spigot/Bukkit. Using standard scheduling.");
         }
 
         plugin.saveDefaultConfig();
@@ -213,7 +213,7 @@ public final class ViaBlocksPlugin {
         disclaimer.setItalic(true);
         meta.spigot().addPage(new ComponentBuilder("").append(welcome).append(body).append(link).append(new TextComponent(".")).append(disclaimer).create());
         book.setItemMeta(meta);
-        plugin.getServer().getScheduler().runTask(plugin, () -> player.openBook(book));
+        plugin.foliaLib.getScheduler().runAtEntity(player, t -> player.openBook(book));
     }
 
     public boolean isEnabled() {

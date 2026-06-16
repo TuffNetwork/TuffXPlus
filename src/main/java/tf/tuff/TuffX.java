@@ -18,6 +18,7 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
+import com.tcoded.folialib.FoliaLib;
 
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
 import tf.tuff.netty.ChunkInjector;
@@ -30,6 +31,9 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
 
     public ServerRegistry serverRegistry;
 
+    /** Platform-aware scheduler facade. Works on Spigot, Paper and Folia. */
+    public FoliaLib foliaLib;
+
     public Y0Plugin y0Plugin;
     public ViaBlocksPlugin viaBlocksPlugin;
     public TuffActions tuffActions;
@@ -38,6 +42,8 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
 
     @Override
     public void onLoad() {
+        this.foliaLib = new FoliaLib(this);
+
         this.y0Plugin = new Y0Plugin(this);
         this.viaBlocksPlugin = new ViaBlocksPlugin(this);
         this.tuffActions = new TuffActions(this);
@@ -98,6 +104,10 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         if (serverRegistry != null) {
             serverRegistry.disconnect();
             serverRegistry = null;
+        }
+
+        if (foliaLib != null) {
+            foliaLib.getScheduler().cancelAllTasks();
         }
 
         PacketEvents.getAPI().terminate();

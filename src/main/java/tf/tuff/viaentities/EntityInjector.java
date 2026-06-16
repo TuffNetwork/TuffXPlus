@@ -21,7 +21,7 @@ public class EntityInjector extends BaseInjector {
 
 	@Override
 	protected void onPostInject(Player player) {
-		plugin.plugin.getServer().getScheduler().runTask(plugin.plugin, () -> {
+		plugin.plugin.foliaLib.getScheduler().runAtEntity(player, t -> {
 			sendExistingEntities(player);
 		});
 	}

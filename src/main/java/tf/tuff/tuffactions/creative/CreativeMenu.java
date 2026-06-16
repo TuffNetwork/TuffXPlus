@@ -3,7 +3,6 @@ package tf.tuff.tuffactions.creative;
 import tf.tuff.tuffactions.TuffActionBase;
 import tf.tuff.tuffactions.TuffActions;
 
-import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryAction;
@@ -99,7 +98,7 @@ public class CreativeMenu extends TuffActionBase {
             InventoryAction action = event.getAction();
             if (action == InventoryAction.PLACE_ALL || action == InventoryAction.PLACE_ONE || action == InventoryAction.SWAP_WITH_CURSOR) {
 
-                Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                plugin.foliaLib.getScheduler().runAtEntityLater(player, t -> {
                     ItemStack realItemStack = playerHoldingPlaceholder.get(playerUUID);
 
                     if (realItemStack != null && event.getClickedInventory() != null) {

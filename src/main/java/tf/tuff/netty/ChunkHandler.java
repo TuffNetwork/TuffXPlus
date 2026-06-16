@@ -5,7 +5,7 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
-import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import tf.tuff.viablocks.CustomBlockListener;
@@ -195,12 +195,14 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
     }
 
     private void requestViaCache(int cx, int cz, long key) {
-        Bukkit.getScheduler().runTask(viaBlocks.plugin.plugin, () -> {
+        World world = player.getWorld();
+        Location chunkLoc = new Location(world, cx << 4, 0, cz << 4);
+        viaBlocks.plugin.plugin.foliaLib.getScheduler().runAtLocation(chunkLoc, t -> {
             if (!player.isOnline()) {
                 release(key);
                 return;
             }
-            viaBlocks.cacheChunkWithCallback(player.getWorld(), cx, cz, data -> {
+            viaBlocks.cacheChunkWithCallback(world, cx, cz, data -> {
                 QueuedPacket q = queue.get(key);
                 if (q != null) {
                     q.viaData = data;
@@ -212,7 +214,8 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
     }
 
     private void requestY0Cache(int cx, int cz, long key) {
-        Bukkit.getScheduler().runTask(viaBlocks.plugin.plugin, () -> {
+        Location chunkLoc = new Location(player.getWorld(), cx << 4, 0, cz << 4);
+        y0.getTuffX().foliaLib.getScheduler().runAtLocation(chunkLoc, t -> {
             if (!player.isOnline()) {
                 release(key);
                 return;

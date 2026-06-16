@@ -3,11 +3,11 @@ package tf.tuff.viablocks;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import javax.annotation.Nonnull;
@@ -47,8 +47,10 @@ public class CustomBlockListener {
     private static final int Y_SHIFT = 0;
     private static final int Z_SHIFT = 12;
     private static final int X_SHIFT = 12 + 26; 
-    private final Map<UUID, Map<Integer, List<Long>>> pendingUpdates = new HashMap<>();
-    private final Set<UUID> pendingFlush = new HashSet<>();
+    // Accessed from per-player region threads on Folia: each player's entry is only
+    // touched on that player's own thread, so the outer map just needs to be concurrent.
+    private final Map<UUID, Map<Integer, List<Long>>> pendingUpdates = new ConcurrentHashMap<>();
+    private final Set<UUID> pendingFlush = ConcurrentHashMap.newKeySet();
     private static final double UPDATE_RADIUS_SQUARED = 6400;
     private static final @Nonnull byte[] EMPTY_PACKET = new byte[0];
     
@@ -159,7 +161,8 @@ public class CustomBlockListener {
 
         if (endIndex < chunks.size()) {
             final int nextStart = endIndex;
-            runSyncLater(() -> sendChunksBatched(player, worldName, chunks, nextStart), 1);
+            plugin.plugin.foliaLib.getScheduler().runAtEntityLater(player,
+                t -> sendChunksBatched(player, worldName, chunks, nextStart), 1);
         }
     }
 
@@ -497,10 +500,13 @@ public class CustomBlockListener {
         if (stateId == -1) return;
 
         World world = location.getWorld();
+        final int finalStateId = stateId;
         for (Player player : world.getPlayers()) {
-            if (plugin.isPlayerEnabled(player) && player.getLocation().distanceSquared(location) < UPDATE_RADIUS_SQUARED) {
-                sendPacket(player, stateId, location);
-            }
+            plugin.plugin.foliaLib.getScheduler().runAtEntity(player, t -> {
+                if (plugin.isPlayerEnabled(player) && player.getLocation().distanceSquared(location) < UPDATE_RADIUS_SQUARED) {
+                    sendPacket(player, finalStateId, location);
+                }
+            });
         }
     }
 
@@ -508,11 +514,13 @@ public class CustomBlockListener {
         if (!plugin.isEnabled() || plugin.viaBlocksEnabledPlayers.isEmpty() || location.getWorld() == null) return;
         final int AIR_ID = 0;
         World world = location.getWorld();
-        
+
         for (Player player : world.getPlayers()) {
-            if (plugin.isPlayerEnabled(player) && player.getLocation().distanceSquared(location) < UPDATE_RADIUS_SQUARED) {
-                sendPacket(player, AIR_ID, location);
-            }
+            plugin.plugin.foliaLib.getScheduler().runAtEntity(player, t -> {
+                if (plugin.isPlayerEnabled(player) && player.getLocation().distanceSquared(location) < UPDATE_RADIUS_SQUARED) {
+                    sendPacket(player, AIR_ID, location);
+                }
+            });
         }
     }
 
@@ -536,7 +544,8 @@ public class CustomBlockListener {
         }
         stateList.add(packLocation(location));
         if (pendingFlush.add(playerId)) {
-            runSyncLater(() -> flushPendingUpdates(playerId), plugin.getUpdateBatchDelayTicks());
+            plugin.plugin.foliaLib.getScheduler().runAtEntityLater(player,
+                t -> flushPendingUpdates(playerId), plugin.getUpdateBatchDelayTicks());
         }
     }
 
@@ -608,13 +617,6 @@ public class CustomBlockListener {
         recentModernChanges.invalidateAll();
     }
 
-    private void runSyncLater(Runnable task, long delay) { 
-        if (!plugin.plugin.isEnabled()) return;
-        try {
-            plugin.plugin.getServer().getScheduler().runTaskLater(plugin.plugin, task, delay); 
-        } catch (Exception e) {}
-    }
-    
     public long packLocation(int x, int y, int z) {
         return ((long)x & X_MASK) << X_SHIFT | ((long)z & Z_MASK) << Z_SHIFT | ((long)y & Y_MASK);
     }

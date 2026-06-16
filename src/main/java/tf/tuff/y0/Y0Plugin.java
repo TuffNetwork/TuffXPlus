@@ -254,6 +254,10 @@ public class Y0Plugin {
         this.chunkInjector = injector;
     }
 
+    public TuffX getTuffX() {
+        return plugin;
+    }
+
     public void handlePacket(Player player, byte[] data) {
         try (DataInputStream i = new DataInputStream(new ByteArrayInputStream(data))) {
             i.readInt();
@@ -380,7 +384,7 @@ public class Y0Plugin {
 
         if (endIndex < chunks.size()) {
             final int nextStart = endIndex;
-            plugin.getServer().getScheduler().runTaskLater(plugin, () ->
+            plugin.foliaLib.getScheduler().runAtEntityLater(player, t ->
                 sendY0ChunksBatched(player, worldName, chunks, nextStart), 1);
         }
     }
@@ -465,7 +469,7 @@ public class Y0Plugin {
             chunkCache.put(k, pp);
             storeCombined(k, pp);
             if (!pp.isEmpty()) {
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                plugin.foliaLib.getScheduler().runAtEntity(player, t -> {
                     if (player.isOnline()) {
                         for (byte[] py : pp) {
                             player.sendPluginMessage(plugin, CHANNEL, py);
@@ -737,7 +741,7 @@ public class Y0Plugin {
         if (block.getY() < 0) {
             final Location loc = block.getLocation();
             final World world = loc.getWorld();
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
+            plugin.foliaLib.getScheduler().runAtLocation(loc, t -> {
                 BlockData ud = world.getBlockData(loc);
                 sendSingleBlockUpdate(loc, ud);
                 invalidateChunkCache(world, loc.getBlockX(), loc.getBlockZ());
@@ -748,7 +752,9 @@ public class Y0Plugin {
     public void handleBlockExplode(BlockExplodeEvent event) {
         final ObjectOpenHashSet<WorldChunk> ac = new ObjectOpenHashSet<>();
         final List<Block> btu = new ArrayList<>(event.blockList());
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        if (btu.isEmpty()) return;
+        final Location at = btu.get(0).getLocation();
+        plugin.foliaLib.getScheduler().runAtLocation(at, t -> {
             for (Block block : btu) {
                 if (block.getY() < 0) {
                     sendSingleBlockUpdate(block.getLocation(), Material.AIR.createBlockData());
@@ -764,7 +770,7 @@ public class Y0Plugin {
     public void handleBlockFromTo(BlockFromToEvent event) {
         final Block block = event.getToBlock();
         if (block.getY() < 0) {
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
+            plugin.foliaLib.getScheduler().runAtLocation(block.getLocation(), t -> {
                 sendSingleBlockUpdate(block.getLocation(), block.getBlockData());
                 invalidateChunkCache(block.getWorld(), block.getX(), block.getZ());
             });
@@ -784,13 +790,13 @@ public class Y0Plugin {
             out.writeShort((short) ((ld[1] << 12) | (ld[0] & 0xFFF)));
             byte[] py = bout.toByteArray();
 
-            plugin.getServer().getScheduler().runTask(plugin, () -> {
-                for (Player player : loc.getWorld().getPlayers()) {
-                    if (player.getLocation().distanceSquared(loc) < 4096) {
+            for (Player player : loc.getWorld().getPlayers()) {
+                plugin.foliaLib.getScheduler().runAtEntity(player, t -> {
+                    if (player.isOnline() && player.getLocation().distanceSquared(loc) < 4096) {
                         player.sendPluginMessage(plugin, CHANNEL, py);
                     }
-                }
-            });
+                });
+            }
 
         } catch (IOException e) {
             severe("Failed to create single block update payload: " + e.getMessage());
@@ -838,25 +844,30 @@ public class Y0Plugin {
             }
         }
         for (Coords sc : stu) {
-            if (!w.isChunkLoaded(sc.x, sc.z)) continue;
-            ChunkSnapshot s = w.getChunkAt(sc.x, sc.z).getChunkSnapshot(true, false, false);
+            Location scLoc = new Location(w, sc.x << 4, 0, sc.z << 4);
+            plugin.foliaLib.getScheduler().runAtLocation(scLoc, rt -> {
+                if (!w.isChunkLoaded(sc.x, sc.z)) return;
+                ChunkSnapshot s = w.getChunkAt(sc.x, sc.z).getChunkSnapshot(true, false, false);
 
-            if (chunkProcessor != null && !chunkProcessor.isShutdown()) {
-                chunkProcessor.submit(() -> {
-                    try {
-                        byte[] py = createLightPayload(s, sc);
-                        plugin.getServer().getScheduler().runTask(plugin, () -> {
-                            for (Player player : w.getPlayers()) {
-                                if (player.isOnline() && player.getLocation().distanceSquared(loc) < 4096) {
-                                    player.sendPluginMessage(plugin, CHANNEL, py);
+                if (chunkProcessor != null && !chunkProcessor.isShutdown()) {
+                    chunkProcessor.submit(() -> {
+                        try {
+                            byte[] py = createLightPayload(s, sc);
+                            plugin.foliaLib.getScheduler().runNextTick(gt -> {
+                                for (Player player : w.getPlayers()) {
+                                    plugin.foliaLib.getScheduler().runAtEntity(player, t -> {
+                                        if (player.isOnline() && player.getLocation().distanceSquared(loc) < 4096) {
+                                            player.sendPluginMessage(plugin, CHANNEL, py);
+                                        }
+                                    });
                                 }
-                            }
-                        });
-                    } catch (IOException e) {
-                        severe("Failed to create lighting payload: " + e.getMessage());
-                    }
-                });
-            }
+                            });
+                        } catch (IOException e) {
+                            severe("Failed to create lighting payload: " + e.getMessage());
+                        }
+                    });
+                }
+            });
         }
     }
 

@@ -37,7 +37,7 @@ public class ViaBlockIds {
 
         plugin.info("Server Minecraft Version: " + serverVersion);
 
-        Bukkit.getScheduler().runTaskLater(pl, this::initializeMappings, 1L);
+        pl.foliaLib.getScheduler().runLater(t -> initializeMappings(), 1L);
     }
 
     private void initializeMappings() {
@@ -104,6 +104,22 @@ public class ViaBlockIds {
 
         plugin.info("Searching for mappings, starting from " + serverVersion + " and going down.");
 
+        // Direct lookups for the exact server version. The down-walk below assumes the legacy
+        // "1.<16+>" scheme (its loop bound is m >= 16), so it can never reach a year-based
+        // version like 26.1.2. Try the precise filenames first so a bundled mapping-26.x.json
+        // is picked up.
+        for (String fn : new String[]{
+                "mapping-" + serverVersion + ".json",
+                "mapping-" + maj + "." + min + ".json",
+                "mapping-" + maj + ".json"}) {
+            InputStream is = p.getResource(fn);
+            if (is != null) {
+                plugin.info((("mapping-" + serverVersion + ".json").equals(fn)
+                    ? "Found exact mapping file: " : "Using fallback mapping file: ") + fn);
+                return is;
+            }
+        }
+
         for (int m = min; m >= 16; m--) {
             int sp = (m == min) ? pat : 9;
 
@@ -135,6 +151,19 @@ public class ViaBlockIds {
         return null;
     }
 
+    /** Fixed legacy ids for blocks whose mapping must not be derived from the palette. */
+    private static int[] chestOverride(String blockStateKey) {
+        String blockName = blockStateKey.contains("[")
+            ? blockStateKey.substring(0, blockStateKey.indexOf("["))
+            : blockStateKey;
+        switch (blockName) {
+            case "chest":         return new int[]{54, 0};
+            case "ender_chest":   return new int[]{130, 0};
+            case "trapped_chest": return new int[]{146, 0};
+            default:              return null;
+        }
+    }
+
     private void generateMappings(File f) {
         try (InputStream is = fmf()) {
             if (is == null) {
@@ -145,39 +174,42 @@ public class ViaBlockIds {
             ObjectMapper m = new ObjectMapper();
             @SuppressWarnings("unchecked")
             Map<String, Object> r = m.readValue(is, Map.class);
-            @SuppressWarnings("unchecked")
-            List<String> s = (List<String>) r.get("blockstates");
+            Object bs = r.get("blockstates");
 
-            if (s == null) {
+            if (bs == null) {
                 plugin.severe("'blockstates' key not found in JSON.");
                 return;
             }
 
             Object2ObjectOpenHashMap<String, int[]> nlm = new Object2ObjectOpenHashMap<>();
-            plugin.info("Generating legacy mappings for " + s.size() + " block states...");
 
-            for (int i = 0; i < s.size(); i++) {
-                String k = s.get(i).replace("minecraft:", "");
-                String blockName = k.contains("[") ? k.substring(0, k.indexOf("[")) : k;
-
-                int[] legacy;
-
-                switch (blockName) {
-                    case "chest":
-                        legacy = new int[]{54, 0};
-                        break;
-                    case "ender_chest":
-                        legacy = new int[]{130, 0};
-                        break;
-                    case "trapped_chest":
-                        legacy = new int[]{146, 0};
-                        break;
-                    default:
-                        legacy = ctl(i);
-                        break;
+            if (bs instanceof List) {
+                // Raw ViaVersion dump: an ordered list of modern block-state strings where the
+                // list index is the modern global block-state id. Convert each via ViaBackwards.
+                @SuppressWarnings("unchecked")
+                List<String> s = (List<String>) bs;
+                plugin.info("Generating legacy mappings for " + s.size() + " block states...");
+                for (int i = 0; i < s.size(); i++) {
+                    String k = s.get(i).replace("minecraft:", "");
+                    int[] override = chestOverride(k);
+                    nlm.put(k, override != null ? override : ctl(i));
                 }
-
-                nlm.put(k, legacy);
+            } else if (bs instanceof Map) {
+                // Already-computed mapping (e.g. a bundled pre-computed cache): block-state
+                // string -> [legacy id, meta]. Used directly; no palette conversion needed.
+                @SuppressWarnings("unchecked")
+                Map<String, List<Integer>> precomputed = (Map<String, List<Integer>>) bs;
+                plugin.info("Loading " + precomputed.size() + " pre-computed legacy mappings...");
+                for (Map.Entry<String, List<Integer>> e : precomputed.entrySet()) {
+                    List<Integer> v = e.getValue();
+                    if (v == null || v.size() != 2) continue;
+                    String k = e.getKey().replace("minecraft:", "");
+                    int[] override = chestOverride(k);
+                    nlm.put(k, override != null ? override : new int[]{v.get(0), v.get(1)});
+                }
+            } else {
+                plugin.severe("'blockstates' is neither a list nor a map; unrecognized mapping format.");
+                return;
             }
 
             legacyMappings = nlm;
@@ -214,24 +246,8 @@ public class ViaBlockIds {
                 List<Integer> ll = e.getValue();
 
                 if (ll != null && ll.size() == 2) {
-                    String blockName = fullKey.contains("[") ? fullKey.substring(0, fullKey.indexOf("[")) : fullKey;
-                    int[] finalId;
-
-                    switch (blockName) {
-                        case "chest":
-                            finalId = new int[]{54, 0};
-                            break;
-                        case "ender_chest":
-                            finalId = new int[]{130, 0};
-                            break;
-                        case "trapped_chest":
-                            finalId = new int[]{146, 0};
-                            break;
-                        default:
-                            finalId = new int[]{ll.get(0), ll.get(1)};
-                            break;
-                    }
-                    legacyMappings.put(fullKey, finalId);
+                    int[] override = chestOverride(fullKey);
+                    legacyMappings.put(fullKey, override != null ? override : new int[]{ll.get(0), ll.get(1)});
                 }
             }
             plugin.info("Loaded " + legacyMappings.size() + " legacy mappings.");
