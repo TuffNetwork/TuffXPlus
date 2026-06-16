@@ -1,5 +1,7 @@
 package tf.tuff;
 
+import java.io.File;
+
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -13,7 +15,9 @@ import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.world.ChunkLoadEvent;
+import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.plugin.java.JavaPluginLoader;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import com.github.retrooper.packetevents.PacketEvents;
@@ -21,6 +25,7 @@ import com.github.retrooper.packetevents.event.PacketListenerPriority;
 import com.tcoded.folialib.FoliaLib;
 
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
+
 import tf.tuff.netty.ChunkInjector;
 import tf.tuff.tuffactions.TuffActions;
 import tf.tuff.viablocks.ViaBlocksPlugin;
@@ -39,6 +44,11 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
     public TuffActions tuffActions;
     public ViaEntitiesPlugin viaEntitiesPlugin;
     private ChunkInjector chunkInjector;
+
+    // required by MockBukkit
+    public TuffX(JavaPluginLoader loader, PluginDescriptionFile description, File dataFolder, File file) {
+        super(loader, description, dataFolder, file);
+    }
 
     @Override
     public void onLoad() {
@@ -111,6 +121,9 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
         }
 
         PacketEvents.getAPI().terminate();
+
+        getServer().getMessenger().unregisterIncomingPluginChannel(this);
+        getServer().getMessenger().unregisterOutgoingPluginChannel(this);
     }
 
     public void reloadTuffX(){

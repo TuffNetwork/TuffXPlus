@@ -34,6 +34,11 @@ import com.google.common.io.ByteStreams;
 import tf.tuff.netty.ChunkInjector;
 import tf.tuff.viablocks.version.VersionAdapter;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.longs.LongList;
+
 public class CustomBlockListener {
 
     public final ViaBlocksPlugin plugin;
@@ -83,6 +88,7 @@ public class CustomBlockListener {
     }
 
     public void setChunkInjector(ChunkInjector injector) {
+        if (injector == null) return;
         this.chunkInjector = injector;
     }
 
@@ -259,21 +265,28 @@ public class CustomBlockListener {
     }
 
     private Map<Integer, List<Long>> findModernBlocksInChunk(ChunkSnapshot chunkSnapshot, int minHeight, int maxHeight) {
-        Map<Integer, List<Long>> foundBlocks = new HashMap<>();
+        Int2ObjectMap<LongList> foundBlocks = new Int2ObjectOpenHashMap<>();
+    
         int chunkX = chunkSnapshot.getX() << 4;
         int chunkZ = chunkSnapshot.getZ() << 4;
-
-        for (int y = minHeight; y < maxHeight; y++) {
-            for (int x = 0; x < 16; x++) {
-                for (int z = 0; z < 16; z++) {
+    
+        for (int x = 0; x < 16; x++) {
+            for (int z = 0; z < 16; z++) {
+                for (int y = minHeight; y < maxHeight; y++) {
+                
+                    // Check material FIRST — getBlockType() returns an enum, no allocation
                     Material blockType = chunkSnapshot.getBlockType(x, y, z);
-                    if (blockType == Material.AIR || !this.modernMaterials.contains(blockType)) {
+    
+                    if (blockType == Material.AIR
+                            || blockType == Material.CAVE_AIR
+                            || blockType == Material.VOID_AIR
+                            || !this.modernMaterials.contains(blockType)) {
                         continue;
                     }
-                    
-                    @SuppressWarnings("null")
-                    @Nonnull BlockData data = chunkSnapshot.getBlockData(x, y, z);
-                    
+    
+                    // Only allocate BlockData for confirmed modern blocks
+                    BlockData data = chunkSnapshot.getBlockData(x, y, z);
+    
                     Integer cachedId = blockDataIdCache.getIfPresent(data);
                     int materialId;
                     if (cachedId != null) {
@@ -282,12 +295,12 @@ public class CustomBlockListener {
                         materialId = this.paletteManager.getOrCreateId(data.getAsString());
                         blockDataIdCache.put(data, materialId);
                     }
-
+    
                     if (materialId != -1) {
                         long packedLocation = packLocation(chunkX + x, y, chunkZ + z);
-                        List<Long> locs = foundBlocks.get(materialId);
+                        LongList locs = foundBlocks.get(materialId);
                         if (locs == null) {
-                            locs = new ArrayList<>();
+                            locs = new LongArrayList();
                             foundBlocks.put(materialId, locs);
                         }
                         locs.add(packedLocation);
@@ -295,9 +308,10 @@ public class CustomBlockListener {
                 }
             }
         }
-        return foundBlocks;
-    }
-
+    
+        return (Map<Integer, List<Long>>) (Map<?, ?>) foundBlocks;
+    }   
+    
     public byte[] getExtraDataForMultiBlock(World world, List<Long> locations) {
         Map<Integer, List<Long>> foundBlocks = new HashMap<>();
         

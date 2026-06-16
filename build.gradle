@@ -48,6 +48,15 @@ dependencies {
 
     compileOnly 'org.projectlombok:lombok:1.18.30'
     annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    // Tests
+    testImplementation 'com.viaversion:viaversion:5.9.1'
+    testImplementation 'com.viaversion:viabackwards:5.3.2'
+    testImplementation 'io.netty:netty-all:4.1.97.Final'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.0'
+    testImplementation 'com.github.seeseemelk:MockBukkit-v1.18:2.85.2'
 }
 
 processResources {
@@ -84,4 +93,12 @@ tasks.named('jar') {
 
 tasks.named('build') {
     dependsOn shadowJar
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        exceptionFormat = "full"
+    }
 }

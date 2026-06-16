@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -51,7 +52,7 @@ import tf.tuff.netty.ChunkInjector;
 public class Y0Plugin {
 
     public static final String CHANNEL = "eagler:below_y0";
-    public ViaBlockIds v;
+    public ViaBlockIds viaIds;
 
     private ObjectOpenHashSet<String> enabledWorlds;
     private boolean debug;
@@ -61,7 +62,7 @@ public class Y0Plugin {
     private int concLevel;
     private boolean kickOutdatedClients;
 
-    private final Set<UUID> aib = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> readyPlayers = ConcurrentHashMap.newKeySet();
     private volatile Cache<WorldChunk, ObjectArrayList<byte[]>> chunkCache;
     private volatile Cache<WorldChunk, byte[]> chunkCacheCombined;
     private volatile ExecutorService chunkProcessor;
@@ -232,7 +233,7 @@ public class Y0Plugin {
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL);
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL, plugin);
 
-        if (v == null) v = new ViaBlockIds(this.plugin);
+        if (viaIds == null) viaIds = new ViaBlockIds(this.plugin);
     }
 
     public record Coords(int x, int y, int z) {}
@@ -240,17 +241,18 @@ public class Y0Plugin {
     public void onTuffXDisable() {
         shutdown();
 
-        aib.clear();
+        readyPlayers.clear();
 
-        if (v != null) v = null;
+        if (viaIds != null) viaIds = null;
     }
 
     public boolean isPlayerReady(Player player) {
         if (player == null) return false;
-        return aib.contains(player.getUniqueId());
+        return readyPlayers.contains(player.getUniqueId());
     }
 
     public void setChunkInjector(ChunkInjector injector) {
+        if (injector == null) return;
         this.chunkInjector = injector;
     }
 
@@ -282,9 +284,9 @@ public class Y0Plugin {
         switch (subchannel.toLowerCase()) {
             case "ready2":
                 debug("Player " + player.getName() + " is READY.");
-                aib.add(player.getUniqueId());
+                readyPlayers.add(player.getUniqueId());
                 if (enabledWorlds.contains(player.getWorld().getName())) {
-                    aib.add(player.getUniqueId());
+                    readyPlayers.add(player.getUniqueId());
                     preCacheVisibleChunks(player);
                     if (chunkInjector != null) {
                         chunkInjector.inject(player);
@@ -638,7 +640,7 @@ public class Y0Plugin {
         if (chunkInjector != null) {
             chunkInjector.eject(event.getPlayer());
         }
-        aib.remove(event.getPlayer().getUniqueId());
+        readyPlayers.remove(event.getPlayer().getUniqueId());
     }
 
     public void handleChunkLoad(ChunkLoadEvent event) {
@@ -677,49 +679,60 @@ public class Y0Plugin {
     }
 
     private byte[] createSectionPayload(ChunkSnapshot s, int x, int z, int sy, Object2ObjectOpenHashMap<BlockData, int[]> c) throws IOException {
+        // Ensure thread-local buffer is exactly 12,288 bytes to prevent overflow
         byte[] bd = threadData.get();
+        Arrays.fill(bd, (byte) 0);
         int idx = 0;
-        boolean h = false;
+        boolean hasContent = false;
         int by = sy << 4;
 
-        for (int y = 0; y < 16; y++) {
-            int wy = by + y;
+        // Optimized Loop Order: Matches standard Minecraft internal memory layouts
+        for (int xx = 0; xx < 16; xx++) {
             for (int zz = 0; zz < 16; zz++) {
-                for (int xx = 0; xx < 16; xx++) {
-                    BlockData bdata = s.getBlockData(xx, wy, zz);
-                    int[] ld = c.getOrDefault(bdata, EMPTY_LEGACY);
-                    if (ld == EMPTY_LEGACY && v != null) {
-                        ld = v.toLegacy(bdata);
-                        c.put(bdata, ld);
+                for (int y = 0; y < 16; y++) {
+                    int wy = by + y;
+
+                    BlockData blkData = s.getBlockData(xx, wy, zz);
+                    int[] ld = c.get(blkData); // Fast map lookup
+
+                    if (ld == null) { // Avoid getOrDefault overhead
+                        ld = (viaIds != null) ? viaIds.toLegacy(blkData) : EMPTY_LEGACY;
+                        c.put(blkData, ld);
                     }
 
+                    // Bitwise packing
                     short lb = (short) ((ld[1] << 12) | (ld[0] & 0xFFF));
                     byte pl = (byte) ((s.getBlockSkyLight(xx, wy, zz) << 4) | s.getBlockEmittedLight(xx, wy, zz));
 
-                    bd[idx++] = (byte) (lb >> 8);
-                    bd[idx++] = (byte) lb;
-                    bd[idx++] = pl;
+                    // Write sequence
+                    int linear = ((y << 8) | (zz << 4) | xx) * 3;
+                    bd[linear] = (byte) (lb >> 8);
+                    bd[linear + 1] = (byte) lb;
+                    bd[linear + 2] = pl;
+                    if (linear + 3 > idx) idx = linear + 3;
 
                     if (lb != 0 || pl != 0) {
-                        h = true;
+                        hasContent = true;
                     }
                 }
             }
         }
 
-        if (!h) return null;
+        if (!hasContent) return null;
 
         ByteArrayOutputStream bout = threadOut.get();
         bout.reset();
 
+        // DataOutputStream wrapper safely writes schema
         try (DataOutputStream out = new DataOutputStream(bout)) {
             out.writeUTF("chunk_data");
             out.writeInt(x);
             out.writeInt(z);
             out.writeInt(sy);
             out.write(bd, 0, idx);
-            return bout.toByteArray();
         }
+
+        return bout.toByteArray();
     }
 
     public void handleBlockBreak(BlockBreakEvent event) {
@@ -786,7 +799,7 @@ public class Y0Plugin {
             out.writeInt(loc.getBlockY());
             out.writeInt(loc.getBlockZ());
 
-            int[] ld = v.toLegacy(data);
+            int[] ld = viaIds.toLegacy(data);
             out.writeShort((short) ((ld[1] << 12) | (ld[0] & 0xFFF)));
             byte[] py = bout.toByteArray();
 
