@@ -54,7 +54,7 @@ import tf.tuff.util.SchedulerCompat;
 public class Y0Plugin {
 
     public static final String CHANNEL = "eagler:below_y0";
-    public ViaBlockIds v;
+    public ViaBlockIds viaIds;
 
     private ObjectOpenHashSet<String> enabledWorlds;
     private boolean debug;
@@ -64,7 +64,7 @@ public class Y0Plugin {
     private int concLevel;
     private boolean kickOutdatedClients;
 
-    private final Set<UUID> aib = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> readyPlayers = ConcurrentHashMap.newKeySet();
     private volatile Cache<WorldChunk, ObjectArrayList<byte[]>> chunkCache;
     private volatile Cache<WorldChunk, byte[]> chunkCacheCombined;
     private volatile ExecutorService chunkProcessor;
@@ -235,7 +235,7 @@ public class Y0Plugin {
         plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL);
         plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL, plugin);
 
-        if (v == null) v = new ViaBlockIds(this.plugin);
+        if (viaIds == null) viaIds = new ViaBlockIds(this.plugin);
     }
 
     public record Coords(int x, int y, int z) {}
@@ -243,14 +243,14 @@ public class Y0Plugin {
     public void onTuffXDisable() {
         shutdown();
 
-        aib.clear();
+        readyPlayers.clear();
 
-        if (v != null) v = null;
+        if (viaIds != null) viaIds = null;
     }
 
     public boolean isPlayerReady(Player player) {
         if (player == null) return false;
-        return aib.contains(player.getUniqueId());
+        return readyPlayers.contains(player.getUniqueId());
     }
 
     public void setChunkInjector(ChunkInjector injector) {
@@ -282,9 +282,9 @@ public class Y0Plugin {
         switch (subchannel.toLowerCase()) {
             case "ready2":
                 debug("Player " + player.getName() + " is READY.");
-                aib.add(player.getUniqueId());
+                readyPlayers.add(player.getUniqueId());
                 if (enabledWorlds.contains(player.getWorld().getName())) {
-                    aib.add(player.getUniqueId());
+                    readyPlayers.add(player.getUniqueId());
                     preCacheVisibleChunks(player);
                     if (chunkInjector != null) {
                         chunkInjector.inject(player);
@@ -636,7 +636,7 @@ public class Y0Plugin {
         if (chunkInjector != null) {
             chunkInjector.eject(event.getPlayer());
         }
-        aib.remove(event.getPlayer().getUniqueId());
+        readyPlayers.remove(event.getPlayer().getUniqueId());
     }
 
     public void handleChunkLoad(ChunkLoadEvent event) {
@@ -689,12 +689,12 @@ public class Y0Plugin {
                 for (int y = 0; y < 16; y++) {
                     int wy = by + y;
 
-                    BlockData bdata = s.getBlockData(xx, wy, zz);
-                    int[] ld = c.get(bdata); // Fast map lookup
+                    BlockData blkData = s.getBlockData(xx, wy, zz);
+                    int[] ld = c.get(blkData); // Fast map lookup
 
                     if (ld == null) { // Avoid getOrDefault overhead
-                        ld = (v != null) ? v.toLegacy(bdata) : EMPTY_LEGACY;
-                        c.put(bdata, ld);
+                        ld = (viaIds != null) ? viaIds.toLegacy(blkData) : EMPTY_LEGACY;
+                        c.put(blkData, ld);
                     }
 
                     // Bitwise packing
@@ -789,7 +789,7 @@ public class Y0Plugin {
             out.writeInt(loc.getBlockY());
             out.writeInt(loc.getBlockZ());
 
-            int[] ld = v.toLegacy(data);
+            int[] ld = viaIds.toLegacy(data);
             out.writeShort((short) ((ld[1] << 12) | (ld[0] & 0xFFF)));
             byte[] py = bout.toByteArray();
 
