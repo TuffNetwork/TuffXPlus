@@ -25,7 +25,7 @@ import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.ComponentBuilder;
 import net.md_5.bungee.api.chat.HoverEvent;
 import net.md_5.bungee.api.chat.TextComponent;
-
+import net.md_5.bungee.api.chat.hover.content.Text;
 import tf.tuff.viablocks.version.VersionAdapter;
 import tf.tuff.viablocks.version.modern.ModernAdapter;
 import tf.tuff.TuffX;
@@ -219,7 +219,7 @@ public final class ViaBlocksPlugin {
         link.setColor(ChatColor.BLUE);
         link.setUnderlined(true);
         link.setClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, "https://github.com/TuffNetwork/Tuff-Client-Builds/issues"));
-        link.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder("Click to open the bug tracker!").color(ChatColor.GRAY).create()));
+        link.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new Text(new ComponentBuilder("Click to open the bug tracker!").color(ChatColor.GRAY).create())));
         TextComponent disclaimer = new TextComponent("\n\n(Bamboo and kelp are noted.)");
         disclaimer.setColor(ChatColor.DARK_GRAY);
         disclaimer.setItalic(true);
