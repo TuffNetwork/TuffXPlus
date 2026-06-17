@@ -858,7 +858,7 @@ public class Y0Plugin {
     }
 
     private void sendToNearbyPlayers(Location loc, byte[] payload) {
-        if (payload == null || loc.getWorld() == null || aib.isEmpty()) return;
+        if (payload == null || loc.getWorld() == null || readyPlayers.isEmpty()) return;
 
         final World world = loc.getWorld();
 
@@ -905,7 +905,7 @@ public class Y0Plugin {
     }
 
     private boolean hasReadyPlayersInWorld(World world) {
-        for (UUID playerId : aib) {
+        for (UUID playerId : readyPlayers) {
             Player player = plugin.getServer().getPlayer(playerId);
             if (player != null && player.isOnline() && world.equals(player.getWorld())) {
                 return true;
