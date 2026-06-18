@@ -26,263 +26,287 @@ import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder
 
 import tf.tuff.netty.ChunkInjector;
 import tf.tuff.tuffactions.TuffActions;
+import tf.tuff.util.SchedulerCompat;
 import tf.tuff.viablocks.ViaBlocksPlugin;
 import tf.tuff.viaentities.ViaEntitiesPlugin;
 import tf.tuff.y0.Y0Plugin;
 
 public class TuffX extends JavaPlugin implements Listener, PluginMessageListener {
 
-    public ServerRegistry serverRegistry;
+	public ServerRegistry serverRegistry;
 
-    public Y0Plugin y0Plugin;
-    public ViaBlocksPlugin viaBlocksPlugin;
-    public TuffActions tuffActions;
-    public ViaEntitiesPlugin viaEntitiesPlugin;
-    private ChunkInjector chunkInjector;
+	public Y0Plugin y0Plugin;
+	public ViaBlocksPlugin viaBlocksPlugin;
+	public TuffActions tuffActions;
+	public ViaEntitiesPlugin viaEntitiesPlugin;
+	private ChunkInjector chunkInjector;
+	private boolean packetEventsEnabled;
 
-    // required by MockBukkit
-    public TuffX(JavaPluginLoader loader, PluginDescriptionFile description, File dataFolder, File file) {
-        super(loader, description, dataFolder, file);
-    }
+	// required by MockBukkit
+	public TuffX(JavaPluginLoader loader, PluginDescriptionFile description, File dataFolder, File file) {
+		super(loader, description, dataFolder, file);
+	}
+	public TuffX() { super(); }
 
-    @Override
-    public void onLoad() {
-        this.y0Plugin = new Y0Plugin(this);
-        this.viaBlocksPlugin = new ViaBlocksPlugin(this);
-        this.tuffActions = new TuffActions(this);
-        this.viaEntitiesPlugin = new ViaEntitiesPlugin(this);
+	@Override
+	public void onLoad() {
+		this.y0Plugin = new Y0Plugin(this);
+		this.viaBlocksPlugin = new ViaBlocksPlugin(this);
+		this.tuffActions = new TuffActions(this);
+		this.viaEntitiesPlugin = new ViaEntitiesPlugin(this);
 
-        PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
-        PacketEvents.getAPI().getSettings().reEncodeByDefault(false)
-                .checkForUpdates(false);
-        PacketEvents.getAPI().load();
-    }
+		if (shouldBootstrapPacketEvents()) {
+			PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this));
+			PacketEvents.getAPI().getSettings().reEncodeByDefault(false)
+					.checkForUpdates(false);
+			PacketEvents.getAPI().load();
+			packetEventsEnabled = true;
+		}
+	}
 
-    @Override
-    public void onEnable() {
-        PacketEvents.getAPI().init();
+	@Override
+	public void onEnable() {
+		if (packetEventsEnabled && PacketEvents.getAPI() != null) {
+			PacketEvents.getAPI().init();
+		} else {
+			packetEventsEnabled = false;
+		}
 
-        saveDefaultConfig();
+		saveDefaultConfig();
 
-        y0Plugin.onTuffXEnable();
-        tuffActions.onTuffXEnable();
-        viaBlocksPlugin.onTuffXEnable();
-        viaEntitiesPlugin.onTuffXEnable();
+		getLogger().info(SchedulerCompat.isFolia()
+			? "Folia detected. Using region and entity schedulers."
+			: "Using standard Bukkit-compatible schedulers.");
 
-        chunkInjector = new ChunkInjector(viaBlocksPlugin.blockListener, y0Plugin);
-        viaBlocksPlugin.blockListener.setChunkInjector(chunkInjector);
-        y0Plugin.setChunkInjector(chunkInjector);
+		y0Plugin.onTuffXEnable();
+		tuffActions.onTuffXEnable();
+		viaBlocksPlugin.onTuffXEnable();
+		viaEntitiesPlugin.onTuffXEnable();
 
-        getConfig().options().copyDefaults(true);
-        saveConfig();
+		chunkInjector = new ChunkInjector(viaBlocksPlugin.blockListener, y0Plugin);
+		viaBlocksPlugin.blockListener.setChunkInjector(chunkInjector);
+		y0Plugin.setChunkInjector(chunkInjector);
 
-        PacketEvents.getAPI().getEventManager().registerListener(
-            new NetworkListener(this), PacketListenerPriority.NORMAL
-        );
+		getConfig().options().copyDefaults(true);
+		saveConfig();
 
-        getServer().getPluginManager().registerEvents(this, this);
+		if (packetEventsEnabled) {
+			PacketEvents.getAPI().getEventManager().registerListener(
+				new NetworkListener(this), PacketListenerPriority.NORMAL
+			);
+		}
 
-        setupRegistry();
-        lfe();
-    }
+		getServer().getPluginManager().registerEvents(this, this);
 
-    private void setupRegistry() {
-        if (getConfig().getBoolean("registry.enabled", false)) {
-            String url = getConfig().getString("registry.server-url");
-            String ws = getConfig().getString("registry.server");
+		setupRegistry();
+		lfe();
+	}
 
-            if (ws != null && !ws.isEmpty() && !ws.equals("wss://urserverip.net")) {
-                serverRegistry = new ServerRegistry(this, url, ws);
-                serverRegistry.connect();
-            }
-        }
-    }
+	private void setupRegistry() {
+		if (getConfig().getBoolean("registry.enabled", false)) {
+			String url = getConfig().getString("registry.server-url");
+			String ws = getConfig().getString("registry.server");
 
-    @Override
-    public void onDisable() {
-        y0Plugin.onTuffXDisable();
-        viaBlocksPlugin.onTuffXDisable();
-        viaEntitiesPlugin.onTuffXDisable();
+			if (ws != null && !ws.isEmpty() && !ws.equals("wss://urserverip.net")) {
+				serverRegistry = new ServerRegistry(this, url, ws);
+				serverRegistry.connect();
+			}
+		}
+	}
 
-        if (serverRegistry != null) {
-            serverRegistry.disconnect();
-            serverRegistry = null;
-        }
+	@Override
+	public void onDisable() {
+		y0Plugin.onTuffXDisable();
+		viaBlocksPlugin.onTuffXDisable();
+		viaEntitiesPlugin.onTuffXDisable();
 
-        PacketEvents.getAPI().terminate();
+		if (serverRegistry != null) {
+			serverRegistry.disconnect();
+			serverRegistry = null;
+		}
 
-        getServer().getMessenger().unregisterIncomingPluginChannel(this);
-        getServer().getMessenger().unregisterOutgoingPluginChannel(this);
-    }
+		if (packetEventsEnabled && PacketEvents.getAPI() != null) {
+			PacketEvents.getAPI().terminate();
+		}
+		packetEventsEnabled = false;
 
-    public void reloadTuffX(){
-        saveDefaultConfig();
-        reloadConfig();
-        getConfig().options().copyDefaults(true);
-        saveConfig();
+		getServer().getMessenger().unregisterIncomingPluginChannel(this);
+		getServer().getMessenger().unregisterOutgoingPluginChannel(this);
+	}
 
-        if (serverRegistry != null) {
-            serverRegistry.disconnect();
-            serverRegistry = null;
-        }
+	private boolean shouldBootstrapPacketEvents() {
+		return getServer() == null
+			|| !getServer().getClass().getName().startsWith("be.seeseemelk.mockbukkit");
+	}
 
-        setupRegistry();
+	public void reloadTuffX(){
+		saveDefaultConfig();
+		reloadConfig();
+		getConfig().options().copyDefaults(true);
+		saveConfig();
 
-        viaBlocksPlugin.onTuffXReload();
-        y0Plugin.onTuffXReload();
-        tuffActions.onTuffXReload();
-        viaEntitiesPlugin.onTuffXReload();
+		if (serverRegistry != null) {
+			serverRegistry.disconnect();
+			serverRegistry = null;
+		}
 
-        getLogger().info("TuffX reloaded.");
-    }
+		setupRegistry();
 
-    public boolean TuffXCommand(CommandSender sender, Command command, String label, String[] args){
-        if (args.length > 0) {
-            if (args[0].equalsIgnoreCase("reload")) {
-                if (!(sender instanceof Player)) {
-                    reloadTuffX();
-                } else {
-                    Player player = (Player) sender;
-                    if (!player.hasPermission("tuffx.reload")) {
-                        player.sendMessage("§cYou do not have permission to use this command.");
-                        return false;
-                    }
-                    reloadTuffX();
-                    player.sendMessage("TuffX reloaded.");
-                }
-            }
-        }
-        return true;
-    }
+		viaBlocksPlugin.onTuffXReload();
+		y0Plugin.onTuffXReload();
+		tuffActions.onTuffXReload();
+		viaEntitiesPlugin.onTuffXReload();
 
-    @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (command.getName().equalsIgnoreCase("tuffx")) return TuffXCommand(sender, command, label, args);
-        if (command.getName().equalsIgnoreCase("viablocks")) return viaBlocksPlugin.onTuffXCommand(sender, command, label, args);
-        if (command.getName().equalsIgnoreCase("restrictions")) return tuffActions.onTuffXCommand(sender, command, label, args);
-        return true;
-    }
+		getLogger().info("TuffX reloaded.");
+	}
 
-    @Override
-    public void onPluginMessageReceived(String channel, Player player, byte[] message) {
-        if (!player.isOnline()) return;
+	public boolean TuffXCommand(CommandSender sender, Command command, String label, String[] args){
+		if (args.length > 0) {
+			if (args[0].equalsIgnoreCase("reload")) {
+				if (!(sender instanceof Player)) {
+					reloadTuffX();
+				} else {
+					Player player = (Player) sender;
+					if (!player.hasPermission("tuffx.reload")) {
+						player.sendMessage("§cYou do not have permission to use this command.");
+						return false;
+					}
+					reloadTuffX();
+					player.sendMessage("TuffX reloaded.");
+				}
+			}
+		}
+		return true;
+	}
 
-        if (channel.equals("eagler:below_y0")) y0Plugin.handlePacket(player,message);
-        else if (channel.equals("viablocks:handshake")) viaBlocksPlugin.handlePacket(player,message);
-        else if (channel.equals("eagler:tuffactions")) tuffActions.handlePacket(player,message);
-        else if (channel.equals("entities:handshake")) viaEntitiesPlugin.handlePacket(player,message);
-        else getLogger().warning("Received plugin message on unknown channel '%s' from %s".formatted(channel, player.getName()));
-    }
+	@Override
+	public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+		if (command.getName().equalsIgnoreCase("tuffx")) return TuffXCommand(sender, command, label, args);
+		if (command.getName().equalsIgnoreCase("viablocks")) return viaBlocksPlugin.onTuffXCommand(sender, command, label, args);
+		if (command.getName().equalsIgnoreCase("restrictions")) return tuffActions.onTuffXCommand(sender, command, label, args);
+		return true;
+	}
 
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerChangeWorld(PlayerChangedWorldEvent e) {
-        y0Plugin.handlePlayerChangeWorld(e);
-    }
+	@Override
+	public void onPluginMessageReceived(String channel, Player player, byte[] message) {
+		if (!player.isOnline()) return;
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBlockForm(BlockFormEvent e) {
-        viaBlocksPlugin.blockListener.handleBlockForm(e);
-    }
+		if (channel.equals("eagler:below_y0")) y0Plugin.handlePacket(player,message);
+		else if (channel.equals("viablocks:handshake")) viaBlocksPlugin.handlePacket(player,message);
+		else if (channel.equals("eagler:tuffactions")) tuffActions.handlePacket(player,message);
+		else if (channel.equals("entities:handshake")) viaEntitiesPlugin.handlePacket(player,message);
+		else getLogger().warning("Received plugin message on unknown channel '%s' from %s".formatted(channel, player.getName()));
+	}
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBlockFade(BlockFadeEvent e) {
-        viaBlocksPlugin.blockListener.handleBlockFade(e);
-    }
+	@EventHandler(priority = EventPriority.MONITOR)
+	public void onPlayerChangeWorld(PlayerChangedWorldEvent e) {
+		y0Plugin.handlePlayerChangeWorld(e);
+	}
 
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onPlayerJoin(PlayerJoinEvent e) {
-        y0Plugin.handlePlayerJoin(e);
-    }
+	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+	public void onBlockForm(BlockFormEvent e) {
+		viaBlocksPlugin.blockListener.handleBlockForm(e);
+	}
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBlockGrow(BlockGrowEvent e) {
-        viaBlocksPlugin.blockListener.handleBlockGrow(e);
-    }
+	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+	public void onBlockFade(BlockFadeEvent e) {
+		viaBlocksPlugin.blockListener.handleBlockFade(e);
+	}
 
-    @EventHandler
-    public void onPlayerQuit(PlayerQuitEvent e) {
-        y0Plugin.handlePlayerQuit(e);
-        tuffActions.handlePlayerQuit(e);
-        viaBlocksPlugin.blockListener.handlePlayerQuit(e);
-        viaEntitiesPlugin.handlePlayerQuit(e);
-    }
+	@EventHandler(priority = EventPriority.MONITOR)
+	public void onPlayerJoin(PlayerJoinEvent e) {
+		y0Plugin.handlePlayerJoin(e);
+	}
 
-    @EventHandler
-    public void onToggleSwim(EntityToggleSwimEvent e) {
-        tuffActions.handleToggleSwim(e);
-    }
+	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+	public void onBlockGrow(BlockGrowEvent e) {
+		viaBlocksPlugin.blockListener.handleBlockGrow(e);
+	}
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBlockSpread(BlockSpreadEvent e) {
-        viaBlocksPlugin.blockListener.handleBlockSpread(e);
-    }
+	@EventHandler
+	public void onPlayerQuit(PlayerQuitEvent e) {
+		y0Plugin.handlePlayerQuit(e);
+		tuffActions.handlePlayerQuit(e);
+		viaBlocksPlugin.blockListener.handlePlayerQuit(e);
+		viaEntitiesPlugin.handlePlayerQuit(e);
+	}
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBlockBreak(BlockBreakEvent e) {
-        viaBlocksPlugin.blockListener.handleBlockBreak(e);
-        y0Plugin.handleBlockBreak(e);
-    }
+	@EventHandler
+	public void onToggleSwim(EntityToggleSwimEvent e) {
+		tuffActions.handleToggleSwim(e);
+	}
 
-    @EventHandler
-    public void onPlayerInventoryClick(InventoryClickEvent e) {
-        tuffActions.handlePlayerInventoryClick(e);
-    }
+	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+	public void onBlockSpread(BlockSpreadEvent e) {
+		viaBlocksPlugin.blockListener.handleBlockSpread(e);
+	}
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBlockPlace(BlockPlaceEvent e) {
-        viaBlocksPlugin.blockListener.handleBlockPlace(e);
-        y0Plugin.handleBlockPlace(e);
-    }
+	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+	public void onBlockBreak(BlockBreakEvent e) {
+		viaBlocksPlugin.blockListener.handleBlockBreak(e);
+		y0Plugin.handleBlockBreak(e);
+	}
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onBlockPhysics(BlockPhysicsEvent e) {
-        y0Plugin.handleBlockPhysics(e);
-        viaBlocksPlugin.blockListener.handleBlockPhysics(e);
-    }
+	@EventHandler
+	public void onPlayerInventoryClick(InventoryClickEvent e) {
+		tuffActions.handlePlayerInventoryClick(e);
+	}
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onChunkLoad(ChunkLoadEvent e) {
-        y0Plugin.handleChunkLoad(e);
-        viaBlocksPlugin.blockListener.handleChunkLoad(e);
-    }
+	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+	public void onBlockPlace(BlockPlaceEvent e) {
+		viaBlocksPlugin.blockListener.handleBlockPlace(e);
+		y0Plugin.handleBlockPlace(e);
+	}
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBlockExplode(BlockExplodeEvent e) {
-        viaBlocksPlugin.blockListener.handleBlockExplode(e);
-        y0Plugin.handleBlockExplode(e);
-    }
+	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+	public void onBlockPhysics(BlockPhysicsEvent e) {
+		y0Plugin.handleBlockPhysics(e);
+		viaBlocksPlugin.blockListener.handleBlockPhysics(e);
+	}
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
-    public void onBlockFromTo(BlockFromToEvent e) {
-        viaBlocksPlugin.blockListener.handleBlockFromTo(e);
-        y0Plugin.handleBlockFromTo(e);
-    }
+	@EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+	public void onChunkLoad(ChunkLoadEvent e) {
+		y0Plugin.handleChunkLoad(e);
+		viaBlocksPlugin.blockListener.handleChunkLoad(e);
+	}
 
-    private void lfe() {
-        getLogger().info("");
-        getLogger().info("████████╗██╗   ██╗███████╗ ███████╗ ██╗  ██╗");
-        getLogger().info("╚══██╔══╝██║   ██║██╔════╝ ██╔════╝ ╚██╗██╔╝");
-        getLogger().info("   ██║   ██║   ██║██████╗  ██████╗   ╚███╔╝ ");
-        getLogger().info("   ██║   ██║   ██║██╔═══╝  ██╔═══╝   ██╔██╗ ");
-        getLogger().info("   ██║   ╚██████╔╝██║      ██║      ██╔╝╚██╗");
-        getLogger().info("   ╚═╝    ╚═════╝ ╚═╝      ╚═╝      ╚═╝  ╚═╝");
-        getLogger().info("");
-        getLogger().info("CREDITS");
-        getLogger().info("");
-        getLogger().info("Y0 support:");
-        getLogger().info("• Below y0 (client + plugin) programmed by Potato (@justatypicalpotato)");
-        getLogger().info("• llucasandersen - plugin optimizations");
-        getLogger().info("");
-        getLogger().info("ViaBlocks:");
-        getLogger().info("• ViaBlocks partial plugin and client rewrite by Potato");
-        getLogger().info("• llucasandersen (Complex client models and texture fixes,");
-        getLogger().info("      optimizations, PacketEvents migration and async safety fixes)");
-        getLogger().info("• coleis1op, if ts is driving me crazy, im taking credit");
-        getLogger().info("");
-        getLogger().info("Other:");
-        getLogger().info("• Swimming and creative items programmed by Potato (@justatypicalpotato)");
-        getLogger().info("• shaded build, 1.14+ support (before merge) - llucasandersen");
-        getLogger().info("• Restrictions - UplandJacob");
-        getLogger().info("• Overall plugin merges by Potato");
-    }
+	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+	public void onBlockExplode(BlockExplodeEvent e) {
+		viaBlocksPlugin.blockListener.handleBlockExplode(e);
+		y0Plugin.handleBlockExplode(e);
+	}
+
+	@EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+	public void onBlockFromTo(BlockFromToEvent e) {
+		viaBlocksPlugin.blockListener.handleBlockFromTo(e);
+		y0Plugin.handleBlockFromTo(e);
+	}
+
+	private void lfe() {
+		getLogger().info("");
+		getLogger().info("████████╗██╗   ██╗███████╗ ███████╗ ██╗  ██╗");
+		getLogger().info("╚══██╔══╝██║   ██║██╔════╝ ██╔════╝ ╚██╗██╔╝");
+		getLogger().info("   ██║   ██║   ██║██████╗  ██████╗   ╚███╔╝ ");
+		getLogger().info("   ██║   ██║   ██║██╔═══╝  ██╔═══╝   ██╔██╗ ");
+		getLogger().info("   ██║   ╚██████╔╝██║	  ██║	  ██╔╝╚██╗");
+		getLogger().info("   ╚═╝	╚═════╝ ╚═╝	  ╚═╝	  ╚═╝  ╚═╝");
+		getLogger().info("");
+		getLogger().info("CREDITS");
+		getLogger().info("");
+		getLogger().info("Y0 support:");
+		getLogger().info("• Below y0 (client + plugin) programmed by Potato (@justatypicalpotato)");
+		getLogger().info("• llucasandersen - plugin optimizations");
+		getLogger().info("");
+		getLogger().info("ViaBlocks:");
+		getLogger().info("• ViaBlocks partial plugin and client rewrite by Potato");
+		getLogger().info("• llucasandersen (Complex client models and texture fixes,");
+		getLogger().info("	  optimizations, PacketEvents migration and async safety fixes)");
+		getLogger().info("• coleis1op, if ts is driving me crazy, im taking credit");
+		getLogger().info("");
+		getLogger().info("Other:");
+		getLogger().info("• Swimming and creative items programmed by Potato (@justatypicalpotato)");
+		getLogger().info("• shaded build, 1.14+ support (before merge) - llucasandersen");
+		getLogger().info("• Restrictions - UplandJacob");
+		getLogger().info("• Overall plugin merges by Potato");
+	}
 }
