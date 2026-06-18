@@ -31,7 +31,7 @@ dependencies {
 
     implementation 'com.github.retrooper:packetevents-spigot:2.12.1'
 
-    compileOnly 'com.viaversion:viabackwards:5.3.2'
+    compileOnly 'com.viaversion:viabackwards:5.9.1'
     compileOnly 'com.viaversion:viaversion:5.9.1'
 
     compileOnly 'it.unimi.dsi:fastutil:8.5.16'
@@ -54,7 +54,7 @@ dependencies {
     testRuntimeOnly 'io.netty:netty-all:4.1.97.Final'
     testRuntimeOnly 'it.unimi.dsi:fastutil:8.5.16'
     testRuntimeOnly 'com.viaversion:viaversion:5.9.1'
-    testRuntimeOnly 'com.viaversion:viabackwards:5.3.2'
+    testRuntimeOnly 'com.viaversion:viabackwards:5.9.1'
 }
 
 processResources {

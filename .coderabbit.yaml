@@ -1,0 +1,3 @@
+version: 1
+reviews:
+  skip_bots: true
