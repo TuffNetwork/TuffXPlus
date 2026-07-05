@@ -15,10 +15,18 @@ jobs:
     if: github.actor != 'github-actions[bot]'
 
     steps:
+      - name: Generate Token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.TUFF_BUILDER_ID }}
+          private-key: ${{ secrets.TUFF_BUILDER_PRIVATE_KEY }}
+
       - name: checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          token: ${{ steps.generate-token.outputs.token }}
 
       - name: setup
         uses: actions/setup-java@v4
@@ -39,8 +47,8 @@ jobs:
 
       - name: push jar
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
           git add builds/
           if git diff --cached --quiet; then
