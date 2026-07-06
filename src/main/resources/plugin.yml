@@ -4,7 +4,7 @@ main: tf.tuff.TuffX
 author: Potato
 authors: [Potato, SyntaxSavy, llucasandersen, coleis1op, UplandJacob]
 api-version: 1.18
-depend: [ViaVersion, ViaBackwards, packetevents]
+depend: [ViaVersion, ViaBackwards]
 
 commands:
     viablocks:
