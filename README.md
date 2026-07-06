@@ -19,9 +19,13 @@ TuffX+ is a single, unified plugin that combines:
 ### Requirements
 - Java 17+
 - Spigot/Paper 1.18+
-- ViaVersion and ViaBackwards (on the *backend* server *only*; not proxy)
+- [ViaVersion](https://hangar.papermc.io/ViaVersion/ViaVersion) and [ViaBackwards](https://hangar.papermc.io/ViaVersion/ViaBackwards) (on the *backend* server *only*; not proxy)
 
 > PacketEvents, Jackson, and WebSocket libraries are shaded into the jar.
+
+*DO NOT* install the old TuffX plugin; *only* this one
+
+It is highly recommended to install [AxSmithing](https://hangar.papermc.io/Artillex-Studios/AxSmithing) for smithing table support (not specific to TuffClient).
 
 ### Steps
 
