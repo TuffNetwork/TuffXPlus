@@ -1,6 +1,6 @@
 plugins {
     id 'java'
-    id 'com.gradleup.shadow' version '9.4.1'
+    id 'com.gradleup.shadow' version '9.5.1'
 }
 
 group = 'tf.tuff'
@@ -21,9 +21,6 @@ repositories {
     maven { url = 'https://repo.papermc.io/repository/maven-public/' }
     maven { url = 'https://repo.viaversion.com/everything/' }
     maven { url = 'https://repo.codemc.io/repository/maven-releases/' }
-    maven { url = 'https://repo.codemc.io/repository/maven-snapshots/' }
-    maven { url = 'https://jitpack.io' }
-    maven { url = 'https://repo.dmulloy2.net/repository/public/' }
 }
 
 dependencies {
@@ -31,23 +28,21 @@ dependencies {
 
     implementation 'com.github.retrooper:packetevents-spigot:2.13.0'
 
-    compileOnly 'com.viaversion:viabackwards:5.9.1'
-    compileOnly 'com.viaversion:viaversion:5.9.1'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.1'
+    implementation 'org.java-websocket:Java-WebSocket:1.6.0'
 
+    compileOnly 'io.netty:netty-all:4.2.16.Final'
     compileOnly 'it.unimi.dsi:fastutil:8.5.18'
 
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.0'
-
-    compileOnly 'io.netty:netty-all:4.2.15.Final'
-
-    implementation 'org.java-websocket:Java-WebSocket:1.6.0'
+    compileOnly 'com.viaversion:viabackwards:5.10.0'
+    compileOnly 'com.viaversion:viaversion:5.10.0'
 
     compileOnly 'org.projectlombok:lombok:1.18.46'
     annotationProcessor 'org.projectlombok:lombok:1.18.46'
 
     // Tests
     testImplementation 'com.github.seeseemelk:MockBukkit-v1.18:2.85.2'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter:6.1.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.11.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.0'
     testRuntimeOnly 'org.spigotmc:spigot-api:1.18.2-R0.1-SNAPSHOT'
