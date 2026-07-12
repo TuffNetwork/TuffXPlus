@@ -18,7 +18,7 @@ TuffX+ is a single, unified plugin that combines:
 
 ### Requirements
 - Java 17+
-- Spigot/Paper 1.18+
+- Spigot/Paper/Folia 1.18+
 - [ViaVersion](https://hangar.papermc.io/ViaVersion/ViaVersion) and [ViaBackwards](https://hangar.papermc.io/ViaVersion/ViaBackwards) (on the *backend* server *only*; not proxy)
 
 > PacketEvents, Jackson, and WebSocket libraries are shaded into the jar.

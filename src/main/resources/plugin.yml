@@ -5,6 +5,7 @@ author: Potato
 authors: [Potato, SyntaxSavy, llucasandersen, coleis1op, UplandJacob]
 api-version: 1.18
 depend: [ViaVersion, ViaBackwards]
+folia-supported: true
 
 commands:
     viablocks:
