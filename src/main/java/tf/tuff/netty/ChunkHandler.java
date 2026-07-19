@@ -1,7 +1,6 @@
 package tf.tuff.netty;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
@@ -278,7 +277,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 	}
 
 	private void writeWithData(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
-							   byte[] viaData, byte[] y0Data) throws Exception {
+						byte[] viaData, byte[] y0Data) throws Exception {
 		boolean hasVia = viaData != null && viaData.length > 0;
 		boolean hasY0 = y0Data != null && y0Data.length > 0;
 
@@ -287,35 +286,33 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 			return;
 		}
 
-		CompositeByteBuf composite = ctx.alloc().compositeBuffer();
-		composite.addComponent(true, buf.retain());
+		int totalSize = buf.readableBytes();
+		if (hasVia) totalSize += viaData.length;
+		if (hasY0) totalSize += 4 + 4 + y0Data.length; // 4 bytes for Int magic, 4 bytes for length
+
+		ByteBuf bufOut = ctx.alloc().buffer(totalSize);
+		bufOut.writeBytes(buf);
 
 		if (hasVia) {
-			ByteBuf tail = ctx.alloc().buffer();
-			tail.writeBytes(viaData);
-			composite.addComponent(true, tail);
+			bufOut.writeBytes(viaData);
 		}
 
 		if (hasY0) {
-			ByteBuf tail = ctx.alloc().buffer();
-			tail.writeInt(0x59304348);
-			tail.writeInt(y0Data.length);
-			tail.writeBytes(y0Data);
-			composite.addComponent(true, tail);
+			bufOut.writeInt(0x59304348);
+			bufOut.writeInt(y0Data.length);
+			bufOut.writeBytes(y0Data);
 		}
 
-		ctx.write(composite, promise);
+		ctx.write(bufOut, promise);
 	}
 
 	private void writeWithViaOnly(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
 								  byte[] data) throws Exception {
-		ByteBuf tail = ctx.alloc().buffer();
-		tail.writeBytes(data);
+		ByteBuf bufOut = ctx.alloc().buffer(buf.readableBytes()+data.length);
+		bufOut.writeBytes(buf);
+		bufOut.writeBytes(data);
 
-		CompositeByteBuf composite = ctx.alloc().compositeBuffer();
-		composite.addComponents(true, buf, tail);
-
-		ctx.write(composite, promise);
+		ctx.write(bufOut, promise);
 	}
 
 	private long key(int x, int z) {
