@@ -44,7 +44,7 @@ dependencies {
     testImplementation 'com.github.seeseemelk:MockBukkit-v1.18:2.85.2'
     testImplementation 'org.junit.jupiter:junit-jupiter:6.1.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:6.1.2'
-    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:6.1.2'
     testRuntimeOnly 'org.spigotmc:spigot-api:1.18.2-R0.1-SNAPSHOT'
     testRuntimeOnly 'io.netty:netty-all:4.2.16.Final'
     testRuntimeOnly 'it.unimi.dsi:fastutil:8.5.18'
