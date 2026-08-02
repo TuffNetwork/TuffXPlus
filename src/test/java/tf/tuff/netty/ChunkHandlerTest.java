@@ -1,10 +1,40 @@
 package tf.tuff.netty;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPromise;
+import io.netty.channel.embedded.EmbeddedChannel;
+import io.netty.util.ResourceLeakDetector;
+import org.bukkit.entity.Player;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Proxy;
+import java.util.UUID;
+
 class ChunkHandlerTest {
+	private static ResourceLeakDetector.Level previousLeakDetectionLevel;
+
+	@BeforeAll
+	static void enableParanoidLeakDetection() {
+		previousLeakDetectionLevel = ResourceLeakDetector.getLevel();
+		ResourceLeakDetector.setLevel(ResourceLeakDetector.Level.PARANOID);
+	}
+
+	@AfterAll
+	static void restoreLeakDetectionLevel() {
+		ResourceLeakDetector.setLevel(previousLeakDetectionLevel);
+	}
 
 	@Test
 	void decodesSingleBlockChangePositionWithNegativeCoordinates() {
@@ -27,6 +57,194 @@ class ChunkHandlerTest {
 		assertEquals((12 << 4) + 3, position.x());
 		assertEquals((-5 << 4) + 7, position.y());
 		assertEquals((-9 << 4) + 11, position.z());
+	}
+
+	@Test
+	void releasesOriginalBufferAfterImmediateChunkTransformation() {
+		byte[] viaData = {11, 12, 13};
+		TestChunkHandler handler = new TestChunkHandler(viaData, null);
+		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		ByteBuf original = chunkPacket(4, -7);
+		byte[] originalData = ByteBufUtil.getBytes(original);
+
+		assertTrue(channel.writeOutbound(original));
+
+		assertEquals(0, original.refCnt());
+		assertOutboundBytes(channel, concatenate(originalData, viaData));
+		assertFalse(channel.finishAndReleaseAll());
+	}
+
+	@Test
+	void releasesOriginalBufferAfterDelayedChunkTransformation() {
+		byte[] viaData = {21, 22};
+		TestChunkHandler handler = new TestChunkHandler(null, viaData);
+		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		ByteBuf original = chunkPacket(8, 9);
+		byte[] originalData = ByteBufUtil.getBytes(original);
+
+		channel.writeOneOutbound(original);
+		channel.runPendingTasks();
+		channel.flushOutbound();
+
+		assertEquals(0, original.refCnt());
+		assertOutboundBytes(channel, concatenate(originalData, viaData));
+		assertFalse(channel.finishAndReleaseAll());
+	}
+
+	@Test
+	void transfersOriginalBufferDownstreamAfterChunkTimeout() {
+		TestChunkHandler handler = new TestChunkHandler(null, null, 0);
+		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		ByteBuf original = chunkPacket(10, 11);
+
+		channel.writeOneOutbound(original);
+		channel.runScheduledPendingTasks();
+		channel.runPendingTasks();
+		channel.flushOutbound();
+
+		ByteBuf outbound = channel.readOutbound();
+		assertSame(original, outbound);
+		assertEquals(1, original.refCnt());
+		outbound.release();
+		assertEquals(0, original.refCnt());
+		assertFalse(channel.finishAndReleaseAll());
+	}
+
+	@Test
+	void releasesOriginalBufferAfterBlockDataTransformation() {
+		TestChunkHandler handler = new TestChunkHandler(null, null);
+		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		ChannelHandlerContext context = channel.pipeline().context(handler);
+		ByteBuf original = Unpooled.wrappedBuffer(new byte[]{1, 2, 3});
+		byte[] viaData = {4, 5};
+
+		handler.writeWithViaOnly(context, original, channel.newPromise(), viaData);
+		channel.flushOutbound();
+
+		assertEquals(0, original.refCnt());
+		assertOutboundBytes(channel, new byte[]{1, 2, 3, 4, 5});
+		assertFalse(channel.finishAndReleaseAll());
+	}
+
+	@Test
+	void releasesOriginalBufferWhenReplacementConstructionFails() {
+		TestChunkHandler handler = new TestChunkHandler(null, null);
+		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		ChannelHandlerContext context = channel.pipeline().context(handler);
+		ByteBuf original = Unpooled.wrappedBuffer(new byte[]{1, 2, 3});
+		ChannelPromise promise = channel.newPromise();
+
+		handler.writeWithViaOnly(context, original, promise, null);
+
+		assertEquals(0, original.refCnt());
+		assertTrue(promise.isDone());
+		assertFalse(promise.isSuccess());
+		assertFalse(channel.finishAndReleaseAll());
+	}
+
+	@Test
+	void releasesBuffersWhenReplacementWriteFails() {
+		TestChunkHandler handler = new TestChunkHandler(null, null);
+		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		EmbeddedChannel foreignChannel = new EmbeddedChannel();
+		ChannelHandlerContext context = channel.pipeline().context(handler);
+		ByteBuf original = Unpooled.wrappedBuffer(new byte[]{1, 2, 3});
+		ChannelPromise foreignPromise = foreignChannel.newPromise();
+
+		handler.writeWithViaOnly(context, original, foreignPromise, new byte[]{4, 5});
+
+		assertEquals(0, original.refCnt());
+		assertTrue(foreignPromise.isDone());
+		assertFalse(foreignPromise.isSuccess());
+		assertFalse(channel.finishAndReleaseAll());
+		assertFalse(foreignChannel.finishAndReleaseAll());
+	}
+
+	@Test
+	void releasesQueuedBufferWhenHandlerIsRemoved() {
+		TestChunkHandler handler = new TestChunkHandler(null, null);
+		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		ByteBuf original = chunkPacket(12, 13);
+		ChannelPromise promise = channel.newPromise();
+
+		channel.pipeline().write(original, promise);
+		channel.pipeline().remove(handler);
+
+		assertEquals(0, original.refCnt());
+		assertTrue(promise.isDone());
+		assertFalse(promise.isSuccess());
+		assertFalse(channel.finishAndReleaseAll());
+	}
+
+	private static ByteBuf chunkPacket(int chunkX, int chunkZ) {
+		return Unpooled.buffer(9)
+			.writeByte(0x20)
+			.writeInt(chunkX)
+			.writeInt(chunkZ);
+	}
+
+	private static void assertOutboundBytes(EmbeddedChannel channel, byte[] expected) {
+		ByteBuf outbound = channel.readOutbound();
+		assertNotNull(outbound);
+		try {
+			assertArrayEquals(expected, ByteBufUtil.getBytes(outbound));
+		} finally {
+			outbound.release();
+		}
+	}
+
+	private static byte[] concatenate(byte[] first, byte[] second) {
+		byte[] result = new byte[first.length + second.length];
+		System.arraycopy(first, 0, result, 0, first.length);
+		System.arraycopy(second, 0, result, first.length, second.length);
+		return result;
+	}
+
+	private static Player player() {
+		UUID playerId = UUID.randomUUID();
+		return (Player) Proxy.newProxyInstance(
+			Player.class.getClassLoader(),
+			new Class<?>[]{Player.class},
+			(proxy, method, args) -> {
+				if (method.getName().equals("getUniqueId")) return playerId;
+				if (method.getName().equals("toString")) return "ChunkHandlerTestPlayer";
+				if (method.getName().equals("hashCode")) return System.identityHashCode(proxy);
+				if (method.getName().equals("equals")) return proxy == args[0];
+				return null;
+			}
+		);
+	}
+
+	private static final class TestChunkHandler extends ChunkHandler {
+		private final byte[] immediateData;
+		private final byte[] completedData;
+
+		private TestChunkHandler(byte[] immediateData, byte[] completedData) {
+			this(immediateData, completedData, 500);
+		}
+
+		private TestChunkHandler(byte[] immediateData, byte[] completedData, long timeoutMs) {
+			super(null, null, player(), timeoutMs);
+			this.immediateData = immediateData;
+			this.completedData = completedData;
+		}
+
+		@Override
+		boolean isViaActive() {
+			return true;
+		}
+
+		@Override
+		byte[] getViaDataForChunk(int chunkX, int chunkZ) {
+			return immediateData;
+		}
+
+		@Override
+		void requestViaCache(int chunkX, int chunkZ, long key) {
+			if (completedData != null) {
+				completeViaCache(key, completedData);
+			}
+		}
 	}
 
 	private static long packBlockPosition(int x, int y, int z) {
