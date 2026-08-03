@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.netty.buffer.AbstractByteBufAllocator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
@@ -20,6 +21,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 class ChunkHandlerTest {
@@ -130,11 +133,12 @@ class ChunkHandlerTest {
 	void releasesOriginalBufferWhenReplacementConstructionFails() {
 		TestChunkHandler handler = new TestChunkHandler(null, null);
 		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		channel.config().setAllocator(new FailingByteBufAllocator());
 		ChannelHandlerContext context = channel.pipeline().context(handler);
 		ByteBuf original = Unpooled.wrappedBuffer(new byte[]{1, 2, 3});
 		ChannelPromise promise = channel.newPromise();
 
-		handler.writeWithViaOnly(context, original, promise, null);
+		handler.writeWithViaOnly(context, original, promise, new byte[]{4, 5});
 
 		assertEquals(0, original.refCnt());
 		assertTrue(promise.isDone());
@@ -146,12 +150,20 @@ class ChunkHandlerTest {
 	void releasesBuffersWhenReplacementWriteFails() {
 		TestChunkHandler handler = new TestChunkHandler(null, null);
 		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		RecordingByteBufAllocator allocator = new RecordingByteBufAllocator();
+		channel.config().setAllocator(allocator);
 		EmbeddedChannel foreignChannel = new EmbeddedChannel();
 		ChannelHandlerContext context = channel.pipeline().context(handler);
 		ByteBuf original = Unpooled.wrappedBuffer(new byte[]{1, 2, 3});
 		ChannelPromise foreignPromise = foreignChannel.newPromise();
 
 		handler.writeWithViaOnly(context, original, foreignPromise, new byte[]{4, 5});
+
+		ByteBuf replacement = allocator.onlyAllocation();
+		// ctx.write rejects the foreign promise and releases the replacement itself. Only the
+		// allocator's own reference may remain; a second release by the handler would drop it to 0.
+		assertEquals(1, replacement.refCnt());
+		replacement.release();
 
 		assertEquals(0, original.refCnt());
 		assertTrue(foreignPromise.isDone());
@@ -244,6 +256,57 @@ class ChunkHandlerTest {
 			if (completedData != null) {
 				completeViaCache(key, completedData);
 			}
+		}
+	}
+
+	/** Unpooled allocator that can be specialised to model allocation and ownership failures. */
+	private static class TestByteBufAllocator extends AbstractByteBufAllocator {
+		private TestByteBufAllocator() {
+			super(false);
+		}
+
+		@Override
+		protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
+			return Unpooled.buffer(initialCapacity, maxCapacity);
+		}
+
+		@Override
+		protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
+			return Unpooled.directBuffer(initialCapacity, maxCapacity);
+		}
+
+		@Override
+		public boolean isDirectBufferPooled() {
+			return false;
+		}
+	}
+
+	/** Fails every allocation, so replacement construction fails the way it can in production. */
+	private static final class FailingByteBufAllocator extends TestByteBufAllocator {
+		@Override
+		public ByteBuf buffer(int initialCapacity) {
+			throw new IllegalStateException("allocation refused");
+		}
+	}
+
+	/**
+	 * Keeps a reference to every buffer it allocates. The extra retain makes an over-release
+	 * observable: safeRelease swallows the IllegalReferenceCountException, but the reference count
+	 * still drops below the one reference this allocator holds.
+	 */
+	private static final class RecordingByteBufAllocator extends TestByteBufAllocator {
+		private final List<ByteBuf> allocated = new ArrayList<>();
+
+		@Override
+		public ByteBuf buffer(int initialCapacity) {
+			ByteBuf buf = super.buffer(initialCapacity);
+			allocated.add(buf.retain());
+			return buf;
+		}
+
+		private ByteBuf onlyAllocation() {
+			assertEquals(1, allocated.size());
+			return allocated.get(0);
 		}
 	}
 

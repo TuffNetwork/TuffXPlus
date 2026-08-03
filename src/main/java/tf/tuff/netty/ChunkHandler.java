@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 
@@ -191,6 +192,9 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 	private void resolveViaDataOnRegionThread(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
 											  World world, int chunkX, int chunkZ,
 											  java.util.concurrent.Callable<byte[]> supplier) {
+		// Guards buf and promise: the region task may run synchronously, so only the first claimant
+		// may write or release. Every other path must leave the buffer alone.
+		AtomicBoolean owned = new AtomicBoolean(true);
 		try {
 			SchedulerCompat.runRegion(viaBlocks.plugin.plugin, world, chunkX, chunkZ, () -> {
 				byte[] data = null;
@@ -205,6 +209,9 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 				ChannelHandlerContext currentCtx = this.ctx != null ? this.ctx : ctx;
 				try {
 					currentCtx.channel().eventLoop().execute(() -> {
+						if (!owned.compareAndSet(true, false)) {
+							return;
+						}
 						try {
 							buf.resetReaderIndex();
 							if (resolvedData != null && resolvedData.length > 0) {
@@ -217,18 +224,22 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 						}
 					});
 				} catch (Throwable error) {
-					failAndRelease(buf, promise, error);
+					if (owned.compareAndSet(true, false)) {
+						failAndRelease(buf, promise, error);
+					}
 				}
 			});
 		} catch (Throwable error) {
-			failAndRelease(buf, promise, error);
+			if (owned.compareAndSet(true, false)) {
+				failAndRelease(buf, promise, error);
+			}
 		}
 	}
 
 	void requestViaCache(int cx, int cz, long key) {
 		SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
 			if (!player.isOnline()) {
-				release(key);
+				dequeueAndWrite(key);
 				return;
 			}
 			viaBlocks.cacheChunkWithCallback(player.getWorld(), cx, cz, data -> completeViaCache(key, data));
@@ -240,14 +251,14 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		if (q != null) {
 			q.viaData = data;
 			q.viaReady = true;
-			tryRelease(key);
+			tryDequeueAndWrite(key);
 		}
 	}
 
 	private void requestY0Cache(int cx, int cz, long key) {
 		SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
 			if (!player.isOnline()) {
-				release(key);
+				dequeueAndWrite(key);
 				return;
 			}
 			y0.cacheChunkWithCallback(player, cx, cz, data -> {
@@ -255,20 +266,20 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 				if (q != null) {
 					q.y0Data = data;
 					q.y0Ready = true;
-					tryRelease(key);
+					tryDequeueAndWrite(key);
 				}
 			});
 		});
 	}
 
-	private void tryRelease(long key) {
+	private void tryDequeueAndWrite(long key) {
 		QueuedPacket q = queue.get(key);
 		if (q != null && q.viaReady && q.y0Ready) {
-			release(key);
+			dequeueAndWrite(key);
 		}
 	}
 
-	private void release(long key) {
+	private void dequeueAndWrite(long key) {
 		QueuedPacket q = queue.remove(key);
 		if (q == null) return;
 		writeQueuedPacket(q);
@@ -325,8 +336,11 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 				bufOut.writeBytes(y0Data);
 			}
 
-			ctx.write(bufOut, promise);
+			// Hand ownership to ctx.write before calling it: a synchronous rejection releases the
+			// message itself, so the cleanup below must no longer see the buffer.
+			ByteBuf toWrite = bufOut;
 			bufOut = null;
+			ctx.write(toWrite, promise);
 		} catch (Throwable error) {
 			promise.tryFailure(error);
 		} finally {
@@ -343,8 +357,9 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 			bufOut.writeBytes(buf);
 			bufOut.writeBytes(data);
 
-			ctx.write(bufOut, promise);
+			ByteBuf toWrite = bufOut;
 			bufOut = null;
+			ctx.write(toWrite, promise);
 		} catch (Throwable error) {
 			promise.tryFailure(error);
 		} finally {
@@ -357,7 +372,11 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		try {
 			ctx.write(buf, promise);
 		} catch (Throwable error) {
-			failAndRelease(buf, promise, error);
+			// ctx.write already released the message when it rejected it synchronously.
+			if (buf.refCnt() > 0) {
+				ReferenceCountUtil.safeRelease(buf);
+			}
+			promise.tryFailure(error);
 		}
 	}
 
