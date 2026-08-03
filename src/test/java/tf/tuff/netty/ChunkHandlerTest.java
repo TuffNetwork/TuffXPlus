@@ -121,7 +121,7 @@ class ChunkHandlerTest {
 		ByteBuf original = Unpooled.wrappedBuffer(new byte[]{1, 2, 3});
 		byte[] viaData = {4, 5};
 
-		handler.writeWithViaOnly(context, original, channel.newPromise(), viaData);
+		handler.writeWithData(context, original, channel.newPromise(), viaData, null);
 		channel.flushOutbound();
 
 		assertEquals(0, original.refCnt());
@@ -138,7 +138,7 @@ class ChunkHandlerTest {
 		ByteBuf original = Unpooled.wrappedBuffer(new byte[]{1, 2, 3});
 		ChannelPromise promise = channel.newPromise();
 
-		handler.writeWithViaOnly(context, original, promise, new byte[]{4, 5});
+		handler.writeWithData(context, original, promise, new byte[]{4, 5}, null);
 
 		assertEquals(0, original.refCnt());
 		assertTrue(promise.isDone());
@@ -157,7 +157,7 @@ class ChunkHandlerTest {
 		ByteBuf original = Unpooled.wrappedBuffer(new byte[]{1, 2, 3});
 		ChannelPromise foreignPromise = foreignChannel.newPromise();
 
-		handler.writeWithViaOnly(context, original, foreignPromise, new byte[]{4, 5});
+		handler.writeWithData(context, original, foreignPromise, new byte[]{4, 5}, null);
 
 		ByteBuf replacement = allocator.onlyAllocation();
 		// ctx.write rejects the foreign promise and releases the replacement itself. Only the

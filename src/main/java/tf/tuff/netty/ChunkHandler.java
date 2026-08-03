@@ -62,6 +62,31 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		}
 	}
 
+	/**
+	 * Single-claim guard for one in-flight packet. The first caller to claim it owns the buffer and
+	 * the promise; every later caller must leave both alone.
+	 */
+	private static final class PacketOwnership {
+		final ByteBuf buf;
+		final ChannelPromise promise;
+		private final AtomicBoolean unclaimed = new AtomicBoolean(true);
+
+		PacketOwnership(ByteBuf buf, ChannelPromise promise) {
+			this.buf = buf;
+			this.promise = promise;
+		}
+
+		boolean claim() {
+			return unclaimed.compareAndSet(true, false);
+		}
+
+		void failIfUnclaimed(Throwable error) {
+			if (claim()) {
+				failAndRelease(buf, promise, error);
+			}
+		}
+	}
+
 	@Override
 	public void handlerAdded(ChannelHandlerContext ctx) {
 		this.ctx = ctx;
@@ -155,9 +180,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 
 			scheduleTimeout(key, q);
 		} catch (Throwable error) {
-			if (queue.remove(key, q)) {
-				failAndRelease(q, error);
-			}
+			removeAndFail(key, q, error);
 		}
 	}
 
@@ -192,84 +215,89 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 	private void resolveViaDataOnRegionThread(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
 											  World world, int chunkX, int chunkZ,
 											  java.util.concurrent.Callable<byte[]> supplier) {
-		// Guards buf and promise: the region task may run synchronously, so only the first claimant
-		// may write or release. Every other path must leave the buffer alone.
-		AtomicBoolean owned = new AtomicBoolean(true);
-		try {
-			SchedulerCompat.runRegion(viaBlocks.plugin.plugin, world, chunkX, chunkZ, () -> {
-				byte[] data = null;
-				try {
-					if (player.isOnline() && isViaActive()) {
-						data = supplier.call();
-					}
-				} catch (Exception ignored) {
-				}
-				final byte[] resolvedData = data;
+		// The region task may run synchronously, so only the first claimant may write or release the
+		// packet. Every other path must leave the buffer alone.
+		PacketOwnership packet = new PacketOwnership(buf, promise);
+		dispatchOrFail(packet, () -> SchedulerCompat.runRegion(viaBlocks.plugin.plugin, world, chunkX, chunkZ,
+			() -> writeResolvedViaData(ctx, packet, resolveQuietly(supplier))));
+	}
 
-				ChannelHandlerContext currentCtx = this.ctx != null ? this.ctx : ctx;
-				try {
-					currentCtx.channel().eventLoop().execute(() -> {
-						if (!owned.compareAndSet(true, false)) {
-							return;
-						}
-						try {
-							buf.resetReaderIndex();
-							if (resolvedData != null && resolvedData.length > 0) {
-								writeWithViaOnly(currentCtx, buf, promise, resolvedData);
-							} else {
-								writeOriginal(currentCtx, buf, promise);
-							}
-						} catch (Throwable error) {
-							failAndRelease(buf, promise, error);
-						}
-					});
-				} catch (Throwable error) {
-					if (owned.compareAndSet(true, false)) {
-						failAndRelease(buf, promise, error);
-					}
-				}
-			});
+	/** Runs a scheduling step, failing the packet when the step throws before anything claimed it. */
+	private static void dispatchOrFail(PacketOwnership packet, Runnable step) {
+		try {
+			step.run();
 		} catch (Throwable error) {
-			if (owned.compareAndSet(true, false)) {
-				failAndRelease(buf, promise, error);
-			}
+			packet.failIfUnclaimed(error);
+		}
+	}
+
+	private byte[] resolveQuietly(java.util.concurrent.Callable<byte[]> supplier) {
+		try {
+			return player.isOnline() && isViaActive() ? supplier.call() : null;
+		} catch (Exception ignored) {
+			return null;
+		}
+	}
+
+	private void writeResolvedViaData(ChannelHandlerContext ctx, PacketOwnership packet, byte[] viaData) {
+		ChannelHandlerContext currentCtx = this.ctx != null ? this.ctx : ctx;
+		dispatchOrFail(packet, () -> currentCtx.channel().eventLoop()
+			.execute(() -> writeClaimed(currentCtx, packet, viaData)));
+	}
+
+	/** Runs on the event loop, so it fails the packet itself instead of letting the throw escape. */
+	private void writeClaimed(ChannelHandlerContext ctx, PacketOwnership packet, byte[] viaData) {
+		if (!packet.claim()) {
+			return;
+		}
+		try {
+			packet.buf.resetReaderIndex();
+			writeWithData(ctx, packet.buf, packet.promise, viaData, null);
+		} catch (Throwable error) {
+			failAndRelease(packet.buf, packet.promise, error);
 		}
 	}
 
 	void requestViaCache(int cx, int cz, long key) {
+		requestCacheOnRegionThread(cx, cz, key, () ->
+			viaBlocks.cacheChunkWithCallback(player.getWorld(), cx, cz, data -> completeViaCache(key, data)));
+	}
+
+	private void requestY0Cache(int cx, int cz, long key) {
+		requestCacheOnRegionThread(cx, cz, key, () ->
+			y0.cacheChunkWithCallback(player, cx, cz, data -> completeY0Cache(key, data)));
+	}
+
+	/** Runs a cache request on the chunk's region thread, writing the queued packet as-is if the player left. */
+	private void requestCacheOnRegionThread(int cx, int cz, long key, Runnable request) {
 		SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
 			if (!player.isOnline()) {
 				dequeueAndWrite(key);
 				return;
 			}
-			viaBlocks.cacheChunkWithCallback(player.getWorld(), cx, cz, data -> completeViaCache(key, data));
+			request.run();
 		});
 	}
 
 	void completeViaCache(long key, byte[] data) {
-		QueuedPacket q = queue.get(key);
-		if (q != null) {
+		completeCache(key, q -> {
 			q.viaData = data;
 			q.viaReady = true;
-			tryDequeueAndWrite(key);
-		}
+		});
 	}
 
-	private void requestY0Cache(int cx, int cz, long key) {
-		SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
-			if (!player.isOnline()) {
-				dequeueAndWrite(key);
-				return;
-			}
-			y0.cacheChunkWithCallback(player, cx, cz, data -> {
-				QueuedPacket q = queue.get(key);
-				if (q != null) {
-					q.y0Data = data;
-					q.y0Ready = true;
-					tryDequeueAndWrite(key);
-				}
-			});
+	void completeY0Cache(long key, byte[] data) {
+		completeCache(key, q -> {
+			q.y0Data = data;
+			q.y0Ready = true;
 		});
+	}
+
+	private void completeCache(long key, java.util.function.Consumer<QueuedPacket> apply) {
+		QueuedPacket q = queue.get(key);
+		if (q == null) return;
+		apply.accept(q);
+		tryDequeueAndWrite(key);
 	}
 
 	private void tryDequeueAndWrite(long key) {
@@ -344,27 +372,8 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		} catch (Throwable error) {
 			promise.tryFailure(error);
 		} finally {
-			ReferenceCountUtil.safeRelease(bufOut);
-			ReferenceCountUtil.safeRelease(buf);
-		}
-	}
-
-	void writeWithViaOnly(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
-								  byte[] data) {
-		ByteBuf bufOut = null;
-		try {
-			bufOut = ctx.alloc().buffer(buf.readableBytes() + data.length);
-			bufOut.writeBytes(buf);
-			bufOut.writeBytes(data);
-
-			ByteBuf toWrite = bufOut;
-			bufOut = null;
-			ctx.write(toWrite, promise);
-		} catch (Throwable error) {
-			promise.tryFailure(error);
-		} finally {
-			ReferenceCountUtil.safeRelease(bufOut);
-			ReferenceCountUtil.safeRelease(buf);
+			releaseIfLive(bufOut);
+			releaseIfLive(buf);
 		}
 	}
 
@@ -372,21 +381,32 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		try {
 			ctx.write(buf, promise);
 		} catch (Throwable error) {
-			// ctx.write already released the message when it rejected it synchronously.
-			if (buf.refCnt() > 0) {
-				ReferenceCountUtil.safeRelease(buf);
-			}
-			promise.tryFailure(error);
+			// ctx.write already released the message when it rejected it synchronously, so the
+			// release below is skipped by the reference count guard.
+			failAndRelease(buf, promise, error);
 		}
 	}
 
-	private void failAndRelease(QueuedPacket q, Throwable error) {
+	private void removeAndFail(long key, QueuedPacket q, Throwable error) {
+		if (queue.remove(key, q)) {
+			failAndRelease(q, error);
+		}
+	}
+
+	private static void failAndRelease(QueuedPacket q, Throwable error) {
 		failAndRelease(q.buf, q.promise, error);
 	}
 
-	private void failAndRelease(ByteBuf buf, ChannelPromise promise, Throwable error) {
-		ReferenceCountUtil.safeRelease(buf);
+	private static void failAndRelease(ByteBuf buf, ChannelPromise promise, Throwable error) {
+		releaseIfLive(buf);
 		promise.tryFailure(error);
+	}
+
+	/** Releases a buffer this handler still owns. Buffers already handed off or freed are left alone. */
+	private static void releaseIfLive(ByteBuf buf) {
+		if (buf != null && buf.refCnt() > 0) {
+			ReferenceCountUtil.safeRelease(buf);
+		}
 	}
 
 	private long key(int x, int z) {
@@ -468,10 +488,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 	@Override
 	public void handlerRemoved(ChannelHandlerContext ctx) {
 		for (Map.Entry<Long, QueuedPacket> entry : queue.entrySet()) {
-			QueuedPacket q = entry.getValue();
-			if (queue.remove(entry.getKey(), q)) {
-				failAndRelease(q, new ClosedChannelException());
-			}
+			removeAndFail(entry.getKey(), entry.getValue(), new ClosedChannelException());
 		}
 	}
 }
