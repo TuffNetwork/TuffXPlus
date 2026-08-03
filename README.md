@@ -29,7 +29,7 @@ It is highly recommended to install [AxSmithing](https://hangar.papermc.io/Artil
 
 ### Steps
 
-1. Download the latest release from the [Releases page](https://github.com/TuffNetwork/TuffXPlus/releases) (or the latest beta from [the builds directory](builds)).
+1. Download the latest release from [GitHub Releases](https://github.com/TuffNetwork/TuffXPlus/releases), [Modrinth](https://modrinth.com/plugin/tuffxplus), [CurseForge](https://www.curseforge.com/minecraft/bukkit-plugins/tuffxplus), [SpigotMC](https://www.spigotmc.org/resources/136847/), or the latest beta from [the builds directory](builds).
 2. Drop `TuffXPlus-x.x.x.jar` into your server's `plugins` folder.
 3. Start the server to generate `plugins/TuffXPlus/config.yml`.
 4. Configure features in `config.yml` (`y0`, `registry`, `viablocks`, `viaentities`, `swimming`, `creative-items`, `restrictions`).
