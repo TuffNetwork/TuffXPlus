@@ -27,7 +27,7 @@ public class CreativeMenu extends TuffActionBase {
 	private final TabUtil tabUtil;
 
 	public CreativeMenu(TuffActions actsPlugin) {
-		super(actsPlugin, "Creative Items", "creative-items", true);
+		super(actsPlugin, "Creative Items", "creative-items");
 		this.tabUtil = new TabUtil(actsPlugin);
 	}
 

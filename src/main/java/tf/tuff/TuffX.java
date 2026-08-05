@@ -64,6 +64,14 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
 		}
 	}
 
+	private void loadConfig() {
+		saveDefaultConfig();
+		reloadConfig();
+		getConfig().options().copyDefaults(true);
+		saveConfig();
+		reloadConfig();
+	}
+
 	@Override
 	public void onEnable() {
 		if (packetEventsEnabled && PacketEvents.getAPI() != null) {
@@ -72,7 +80,7 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
 			packetEventsEnabled = false;
 		}
 
-		saveDefaultConfig();
+		loadConfig();
 
 		getLogger().info(SchedulerCompat.isFolia()
 			? "Folia detected. Using region and entity schedulers."
@@ -86,9 +94,6 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
 		chunkInjector = new ChunkInjector(viaBlocksPlugin.blockListener, y0Plugin);
 		viaBlocksPlugin.blockListener.setChunkInjector(chunkInjector);
 		y0Plugin.setChunkInjector(chunkInjector);
-
-		getConfig().options().copyDefaults(true);
-		saveConfig();
 
 		if (packetEventsEnabled) {
 			PacketEvents.getAPI().getEventManager().registerListener(
@@ -140,10 +145,7 @@ public class TuffX extends JavaPlugin implements Listener, PluginMessageListener
 	}
 
 	public void reloadTuffX(){
-		saveDefaultConfig();
-		reloadConfig();
-		getConfig().options().copyDefaults(true);
-		saveConfig();
+		loadConfig();
 
 		if (serverRegistry != null) {
 			serverRegistry.disconnect();

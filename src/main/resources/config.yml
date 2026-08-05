@@ -17,12 +17,12 @@ y0:
   chunk-processor-threads: -1
 
   # The size of the cache
-  cache-size: 512
+  cache-size: 192
   # How long until the cache expires (minutes)
-  cache-expiration: 5
+  cache-expiration: 2
 
   # Kick outdated clients that (generally) not compatible with this version of TuffX
-  kick-outdated-clients: true
+  kick-outdated-clients: false
 
 
 #  ||\\ ||== //_\\ <>  //= ==== ||\\ \\//

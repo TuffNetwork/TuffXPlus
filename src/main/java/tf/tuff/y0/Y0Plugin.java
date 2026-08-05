@@ -219,15 +219,6 @@ public class Y0Plugin {
 	}
 
 	public void onTuffXEnable() {
-		plugin.getConfig().addDefault("y0.y0-enabled", false);
-		plugin.getConfig().addDefault("y0.debug-mode", false);
-		plugin.getConfig().addDefault("y0.enabled-worlds", new ArrayList<>(java.util.Collections.singletonList("world")));
-		plugin.getConfig().addDefault("y0.chunk-processor-threads", -1);
-		plugin.getConfig().addDefault("y0.cache-size", 1024);
-		plugin.getConfig().addDefault("y0.cache-expiration", 5);
-		plugin.getConfig().addDefault("y0.kick-outdated-clients", true);
-		plugin.getConfig().options().copyDefaults(true);
-
 		startup();
 
 		this.chunkPacketListener = new ChunkPacketListener(this);

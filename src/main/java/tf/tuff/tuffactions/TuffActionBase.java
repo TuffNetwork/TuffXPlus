@@ -15,13 +15,11 @@ public abstract class TuffActionBase {
 	protected final TuffActions actsPlugin;
 	protected final TuffX plugin;
 
-	public TuffActionBase(TuffActions actsPlugin, String name, String configPath, boolean defaultEnabled) {
+	public TuffActionBase(TuffActions actsPlugin, String name, String configPath) {
 		this.actsPlugin = actsPlugin;
 		this.plugin = actsPlugin.plugin;
 		this.name = name;
 		this.configPath = configPath;
-		plugin.getConfig().addDefault(configPath+".enabled", defaultEnabled);
-		plugin.getConfig().addDefault(configPath+".debug", false);
 	}
 
 	public boolean isEnabled() {

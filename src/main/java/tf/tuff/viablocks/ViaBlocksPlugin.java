@@ -140,14 +140,12 @@ public final class ViaBlocksPlugin {
 	}
 
 	private void loadSyncSettings() {
-		enabled = plugin.getConfig().getBoolean("viablocks.viablocks-enabled", false);
-		debug = plugin.getConfig().getBoolean("viablocks.debug", false);
-		sendWelcomeBook = plugin.getConfig().getBoolean("viablocks.send-welcome-book", true);
+		enabled = plugin.getConfig().getBoolean("viablocks.viablocks-enabled");
+		debug = plugin.getConfig().getBoolean("viablocks.debug");
+		sendWelcomeBook = plugin.getConfig().getBoolean("viablocks.send-welcome-book");
 
-		String mode = plugin.getConfig().getString("viablocks.sync-mode", "normal");
-		if (mode == null) {
-			mode = "normal";
-		}
+		String mode = plugin.getConfig().getString("viablocks.sync-mode");
+		if (mode == null) mode = "normal";
 		this.updateBatchDelayTicks = mode.equalsIgnoreCase("reduced") ? 10L : 1L;
 	}
 

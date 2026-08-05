@@ -26,7 +26,7 @@ public class Swimming extends TuffActionBase {
 	private final Map<UUID, TaskWrapper> swimStateTasks = new ConcurrentHashMap<>();
 
 	public Swimming(TuffActions plugin) {
-		super(plugin, "Swimming", "swimming", true);
+		super(plugin, "Swimming", "swimming");
 	}
 
 	@Override
