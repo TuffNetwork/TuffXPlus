@@ -95,6 +95,32 @@ class ChunkHandlerTest {
 	}
 
 	@Test
+	void preservesMultipleQueuedPacketsForTheSameChunk() {
+		byte[] viaData = {31, 32};
+		TestChunkHandler handler = new TestChunkHandler(null, null);
+		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		ByteBuf first = chunkPacket(8, 9);
+		ByteBuf second = chunkPacket(8, 9);
+		byte[] originalData = ByteBufUtil.getBytes(first);
+		ChannelPromise firstPromise = channel.newPromise();
+		ChannelPromise secondPromise = channel.newPromise();
+
+		channel.pipeline().write(first, firstPromise);
+		channel.pipeline().write(second, secondPromise);
+		handler.completePendingViaCaches(viaData);
+		channel.runPendingTasks();
+		channel.flushOutbound();
+
+		assertEquals(0, first.refCnt());
+		assertEquals(0, second.refCnt());
+		assertTrue(firstPromise.isSuccess());
+		assertTrue(secondPromise.isSuccess());
+		assertOutboundBytes(channel, concatenate(originalData, viaData));
+		assertOutboundBytes(channel, concatenate(originalData, viaData));
+		assertFalse(channel.finishAndReleaseAll());
+	}
+
+	@Test
 	void transfersOriginalBufferDownstreamAfterChunkTimeout() {
 		TestChunkHandler handler = new TestChunkHandler(null, null, 0);
 		EmbeddedChannel channel = new EmbeddedChannel(handler);
@@ -126,6 +152,29 @@ class ChunkHandlerTest {
 
 		assertEquals(0, original.refCnt());
 		assertOutboundBytes(channel, new byte[]{1, 2, 3, 4, 5});
+		assertFalse(channel.finishAndReleaseAll());
+	}
+
+	@Test
+	void transfersOriginalBufferDownstreamWhenThereIsNoDataToAppend() {
+		TestChunkHandler handler = new TestChunkHandler(null, null);
+		EmbeddedChannel channel = new EmbeddedChannel(handler);
+		RecordingByteBufAllocator allocator = new RecordingByteBufAllocator();
+		channel.config().setAllocator(allocator);
+		ChannelHandlerContext context = channel.pipeline().context(handler);
+		ByteBuf original = Unpooled.wrappedBuffer(new byte[]{1, 2, 3});
+		ChannelPromise promise = channel.newPromise();
+
+		handler.writeWithData(context, original, promise, new byte[0], null);
+		channel.flushOutbound();
+
+		// Nothing was appended, so the original is handed downstream untouched rather than copied.
+		assertTrue(allocator.allocations().isEmpty());
+		ByteBuf outbound = channel.readOutbound();
+		assertSame(original, outbound);
+		assertEquals(1, original.refCnt());
+		outbound.release();
+		assertTrue(promise.isSuccess());
 		assertFalse(channel.finishAndReleaseAll());
 	}
 
@@ -230,6 +279,7 @@ class ChunkHandlerTest {
 	private static final class TestChunkHandler extends ChunkHandler {
 		private final byte[] immediateData;
 		private final byte[] completedData;
+		private final List<Long> pendingRequests = new ArrayList<>();
 
 		private TestChunkHandler(byte[] immediateData, byte[] completedData) {
 			this(immediateData, completedData, 500);
@@ -252,10 +302,19 @@ class ChunkHandlerTest {
 		}
 
 		@Override
-		void requestViaCache(int chunkX, int chunkZ, long key) {
+		void requestViaCache(int chunkX, int chunkZ, long requestId) {
 			if (completedData != null) {
-				completeViaCache(key, completedData);
+				completeViaCache(requestId, completedData);
+			} else {
+				pendingRequests.add(requestId);
 			}
+		}
+
+		private void completePendingViaCaches(byte[] data) {
+			for (long requestId : pendingRequests) {
+				completeViaCache(requestId, data);
+			}
+			pendingRequests.clear();
 		}
 	}
 
@@ -307,6 +366,10 @@ class ChunkHandlerTest {
 		private ByteBuf onlyAllocation() {
 			assertEquals(1, allocated.size());
 			return allocated.get(0);
+		}
+
+		private List<ByteBuf> allocations() {
+			return allocated;
 		}
 	}
 

@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 
@@ -25,6 +26,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 	private final Player player;
 	private final UUID playerId;
 	private final Map<Long, QueuedPacket> queue = new ConcurrentHashMap<>();
+	private final AtomicLong nextRequestId = new AtomicLong();
 	private final long timeoutMs;
 	private volatile ChannelHandlerContext ctx;
 
@@ -47,18 +49,14 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 	private static class QueuedPacket {
 		final ByteBuf buf;
 		final ChannelPromise promise;
-		final int chunkX;
-		final int chunkZ;
 		volatile boolean viaReady;
 		volatile boolean y0Ready;
 		volatile byte[] viaData;
 		volatile byte[] y0Data;
 
-		QueuedPacket(ByteBuf buf, ChannelPromise promise, int cx, int cz) {
+		QueuedPacket(ByteBuf buf, ChannelPromise promise) {
 			this.buf = buf;
 			this.promise = promise;
-			this.chunkX = cx;
-			this.chunkZ = cz;
 		}
 	}
 
@@ -159,28 +157,25 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 			return;
 		}
 
-		long key = key(chunkX, chunkZ);
-		QueuedPacket q = new QueuedPacket(buf, promise, chunkX, chunkZ);
+		long requestId = nextRequestId.getAndIncrement();
+		QueuedPacket q = new QueuedPacket(buf, promise);
 		q.viaReady = viaReady;
 		q.y0Ready = y0Ready;
 		q.viaData = viaData;
 		q.y0Data = y0Data;
-		QueuedPacket replaced = queue.put(key, q);
-		if (replaced != null) {
-			failAndRelease(replaced, new IllegalStateException("Queued chunk packet was replaced"));
-		}
+		queue.put(requestId, q);
 
 		try {
 			if (!viaReady) {
-				requestViaCache(chunkX, chunkZ, key);
+				requestViaCache(chunkX, chunkZ, requestId);
 			}
 			if (!y0Ready) {
-				requestY0Cache(chunkX, chunkZ, key);
+				requestY0Cache(chunkX, chunkZ, requestId);
 			}
 
-			scheduleTimeout(key, q);
+			scheduleTimeout(requestId, q);
 		} catch (Throwable error) {
-			removeAndFail(key, q, error);
+			removeAndFail(requestId, q, error);
 		}
 	}
 
@@ -258,57 +253,57 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		}
 	}
 
-	void requestViaCache(int cx, int cz, long key) {
-		requestCacheOnRegionThread(cx, cz, key, () ->
-			viaBlocks.cacheChunkWithCallback(player.getWorld(), cx, cz, data -> completeViaCache(key, data)));
+	void requestViaCache(int cx, int cz, long requestId) {
+		requestCacheOnRegionThread(cx, cz, requestId, () ->
+			viaBlocks.cacheChunkWithCallback(player.getWorld(), cx, cz, data -> completeViaCache(requestId, data)));
 	}
 
-	private void requestY0Cache(int cx, int cz, long key) {
-		requestCacheOnRegionThread(cx, cz, key, () ->
-			y0.cacheChunkWithCallback(player, cx, cz, data -> completeY0Cache(key, data)));
+	private void requestY0Cache(int cx, int cz, long requestId) {
+		requestCacheOnRegionThread(cx, cz, requestId, () ->
+			y0.cacheChunkWithCallback(player, cx, cz, data -> completeY0Cache(requestId, data)));
 	}
 
 	/** Runs a cache request on the chunk's region thread, writing the queued packet as-is if the player left. */
-	private void requestCacheOnRegionThread(int cx, int cz, long key, Runnable request) {
+	private void requestCacheOnRegionThread(int cx, int cz, long requestId, Runnable request) {
 		SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
 			if (!player.isOnline()) {
-				dequeueAndWrite(key);
+				dequeueAndWrite(requestId);
 				return;
 			}
 			request.run();
 		});
 	}
 
-	void completeViaCache(long key, byte[] data) {
-		completeCache(key, q -> {
+	void completeViaCache(long requestId, byte[] data) {
+		completeCache(requestId, q -> {
 			q.viaData = data;
 			q.viaReady = true;
 		});
 	}
 
-	void completeY0Cache(long key, byte[] data) {
-		completeCache(key, q -> {
+	void completeY0Cache(long requestId, byte[] data) {
+		completeCache(requestId, q -> {
 			q.y0Data = data;
 			q.y0Ready = true;
 		});
 	}
 
-	private void completeCache(long key, java.util.function.Consumer<QueuedPacket> apply) {
-		QueuedPacket q = queue.get(key);
+	private void completeCache(long requestId, java.util.function.Consumer<QueuedPacket> apply) {
+		QueuedPacket q = queue.get(requestId);
 		if (q == null) return;
 		apply.accept(q);
-		tryDequeueAndWrite(key);
+		tryDequeueAndWrite(requestId);
 	}
 
-	private void tryDequeueAndWrite(long key) {
-		QueuedPacket q = queue.get(key);
+	private void tryDequeueAndWrite(long requestId) {
+		QueuedPacket q = queue.get(requestId);
 		if (q != null && q.viaReady && q.y0Ready) {
-			dequeueAndWrite(key);
+			dequeueAndWrite(requestId);
 		}
 	}
 
-	private void dequeueAndWrite(long key) {
-		QueuedPacket q = queue.remove(key);
+	private void dequeueAndWrite(long requestId) {
+		QueuedPacket q = queue.remove(requestId);
 		if (q == null) return;
 		writeQueuedPacket(q);
 	}
@@ -325,10 +320,10 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		}
 	}
 
-	private void scheduleTimeout(long key, QueuedPacket q) {
+	private void scheduleTimeout(long requestId, QueuedPacket q) {
 		if (ctx != null) {
 			ctx.channel().eventLoop().schedule(() -> {
-				if (queue.remove(key, q)) {
+				if (queue.remove(requestId, q)) {
 					writeQueuedPacket(q);
 				}
 			}, timeoutMs, TimeUnit.MILLISECONDS);
@@ -387,8 +382,8 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		}
 	}
 
-	private void removeAndFail(long key, QueuedPacket q, Throwable error) {
-		if (queue.remove(key, q)) {
+	private void removeAndFail(long requestId, QueuedPacket q, Throwable error) {
+		if (queue.remove(requestId, q)) {
 			failAndRelease(q, error);
 		}
 	}
@@ -407,10 +402,6 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		if (buf != null && buf.refCnt() > 0) {
 			ReferenceCountUtil.safeRelease(buf);
 		}
-	}
-
-	private long key(int x, int z) {
-		return ((long) x << 32) | (z & 0xFFFFFFFFL);
 	}
 
 	private int readVarInt(ByteBuf buf) {
