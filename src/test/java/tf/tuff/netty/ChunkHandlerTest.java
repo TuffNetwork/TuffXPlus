@@ -99,9 +99,10 @@ class ChunkHandlerTest {
 		byte[] viaData = {31, 32};
 		TestChunkHandler handler = new TestChunkHandler(null, null);
 		EmbeddedChannel channel = new EmbeddedChannel(handler);
-		ByteBuf first = chunkPacket(8, 9);
-		ByteBuf second = chunkPacket(8, 9);
-		byte[] originalData = ByteBufUtil.getBytes(first);
+		ByteBuf first = chunkPacket(8, 9).writeByte(1);
+		ByteBuf second = chunkPacket(8, 9).writeByte(2);
+		byte[] firstData = ByteBufUtil.getBytes(first);
+		byte[] secondData = ByteBufUtil.getBytes(second);
 		ChannelPromise firstPromise = channel.newPromise();
 		ChannelPromise secondPromise = channel.newPromise();
 
@@ -115,8 +116,8 @@ class ChunkHandlerTest {
 		assertEquals(0, second.refCnt());
 		assertTrue(firstPromise.isSuccess());
 		assertTrue(secondPromise.isSuccess());
-		assertOutboundBytes(channel, concatenate(originalData, viaData));
-		assertOutboundBytes(channel, concatenate(originalData, viaData));
+		assertOutboundBytes(channel, concatenate(firstData, viaData));
+		assertOutboundBytes(channel, concatenate(secondData, viaData));
 		assertFalse(channel.finishAndReleaseAll());
 	}
 
