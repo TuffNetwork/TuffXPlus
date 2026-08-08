@@ -17,13 +17,11 @@ import org.bukkit.event.entity.EntityToggleSwimEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
-import com.github.retrooper.packetevents.PacketEvents;
-import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPluginMessage;
-
 import tf.tuff.TuffX;
 import tf.tuff.tuffactions.creative.CreativeMenu;
 import tf.tuff.tuffactions.restrictions.Restrictions;
 import tf.tuff.tuffactions.swimming.Swimming;
+import tf.tuff.util.SchedulerCompat;
 
 public class TuffActions {
 
@@ -129,9 +127,7 @@ public class TuffActions {
 	}
 
 	public void sendPluginMessage(Player player, String channel, byte[] payload) {
-		if (player == null || payload == null || !player.isOnline() || PacketEvents.getAPI() == null || !PacketEvents.getAPI().isInitialized()) return;
-		WrapperPlayServerPluginMessage packet = new WrapperPlayServerPluginMessage(channel, payload);
-		PacketEvents.getAPI().getPlayerManager().sendPacket(player, packet);
+		SchedulerCompat.sendPluginMessage(plugin, player, channel, payload);
 	}
 
 	public void handlePlayerQuit(PlayerQuitEvent event) {

@@ -8,6 +8,8 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 
+import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPluginMessage;
 import io.github.retrooper.packetevents.util.folia.FoliaScheduler;
 import io.github.retrooper.packetevents.util.folia.TaskWrapper;
 
@@ -74,9 +76,9 @@ public final class SchedulerCompat {
 	public static void sendPluginMessage(Plugin plugin, Player player, String channel, byte[] payload) {
 		if (player == null || channel == null || payload == null || !player.isOnline()) return;
 		runEntity(player, plugin, () -> {
-			if (player.isOnline()) {
-				player.sendPluginMessage(plugin, channel, payload);
-			}
+			if (!player.isOnline() || !PacketEvents.getAPI().isInitialized()) return;
+			WrapperPlayServerPluginMessage packet = new WrapperPlayServerPluginMessage(channel, payload);
+			PacketEvents.getAPI().getPlayerManager().sendPacket(player, packet);
 		});
 	}
 }
