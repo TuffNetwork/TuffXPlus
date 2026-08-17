@@ -4,16 +4,20 @@ import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
+import io.netty.util.ReferenceCountUtil;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import tf.tuff.viablocks.CustomBlockListener;
 import tf.tuff.y0.Y0Plugin;
 import tf.tuff.util.SchedulerCompat;
 
+import java.nio.channels.ClosedChannelException;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 
@@ -22,6 +26,8 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 	private final Player player;
 	private final UUID playerId;
 	private final Map<Long, QueuedPacket> queue = new ConcurrentHashMap<>();
+	private final AtomicLong nextRequestId = new AtomicLong();
+	private final long timeoutMs;
 	private volatile ChannelHandlerContext ctx;
 
 	private static final long TIMEOUT_MS = 500;
@@ -29,29 +35,53 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 	static record BlockChangePosition(int x, int y, int z) {}
 
 	public ChunkHandler(CustomBlockListener viaBlocks, Y0Plugin y0, Player player) {
+		this(viaBlocks, y0, player, TIMEOUT_MS);
+	}
+
+	ChunkHandler(CustomBlockListener viaBlocks, Y0Plugin y0, Player player, long timeoutMs) {
 		this.viaBlocks = viaBlocks;
 		this.y0 = y0;
 		this.player = player;
 		this.playerId = player.getUniqueId();
+		this.timeoutMs = timeoutMs;
 	}
 
 	private static class QueuedPacket {
 		final ByteBuf buf;
 		final ChannelPromise promise;
-		final int chunkX;
-		final int chunkZ;
-		final long time;
 		volatile boolean viaReady;
 		volatile boolean y0Ready;
 		volatile byte[] viaData;
 		volatile byte[] y0Data;
 
-		QueuedPacket(ByteBuf buf, ChannelPromise promise, int cx, int cz) {
+		QueuedPacket(ByteBuf buf, ChannelPromise promise) {
 			this.buf = buf;
 			this.promise = promise;
-			this.chunkX = cx;
-			this.chunkZ = cz;
-			this.time = System.currentTimeMillis();
+		}
+	}
+
+	/**
+	 * Single-claim guard for one in-flight packet. The first caller to claim it owns the buffer and
+	 * the promise; every later caller must leave both alone.
+	 */
+	private static final class PacketOwnership {
+		final ByteBuf buf;
+		final ChannelPromise promise;
+		private final AtomicBoolean unclaimed = new AtomicBoolean(true);
+
+		PacketOwnership(ByteBuf buf, ChannelPromise promise) {
+			this.buf = buf;
+			this.promise = promise;
+		}
+
+		boolean claim() {
+			return unclaimed.compareAndSet(true, false);
+		}
+
+		void failIfUnclaimed(Throwable error) {
+			if (claim()) {
+				failAndRelease(buf, promise, error);
+			}
 		}
 	}
 
@@ -98,10 +128,14 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		super.write(ctx, msg, promise);
 	}
 
-	private boolean isViaActive() {
+	boolean isViaActive() {
 		return viaBlocks != null
 			&& viaBlocks.plugin.isEnabled()
 			&& viaBlocks.plugin.isPlayerEnabled(player);
+	}
+
+	byte[] getViaDataForChunk(int chunkX, int chunkZ) {
+		return viaBlocks.getExtraDataForChunk(player.getWorld().getName(), chunkX, chunkZ);
 	}
 
 	private void handleChunkPacket(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise) throws Exception {
@@ -110,7 +144,7 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 		buf.resetReaderIndex();
 
 		boolean viaActive = isViaActive();
-		byte[] viaData = viaActive ? viaBlocks.getExtraDataForChunk(player.getWorld().getName(), chunkX, chunkZ) : null;
+		byte[] viaData = viaActive ? getViaDataForChunk(chunkX, chunkZ) : null;
 		byte[] y0Data = y0 != null ? y0.getY0DataForChunk(player, chunkX, chunkZ) : null;
 
 		boolean needY0 = y0 != null && y0.isPlayerReady(player);
@@ -123,22 +157,26 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 			return;
 		}
 
-		long key = key(chunkX, chunkZ);
-		QueuedPacket q = new QueuedPacket(buf.retain(), promise, chunkX, chunkZ);
+		long requestId = nextRequestId.getAndIncrement();
+		QueuedPacket q = new QueuedPacket(buf, promise);
 		q.viaReady = viaReady;
 		q.y0Ready = y0Ready;
 		q.viaData = viaData;
 		q.y0Data = y0Data;
-		queue.put(key, q);
+		queue.put(requestId, q);
 
-		if (!viaReady) {
-			requestViaCache(chunkX, chunkZ, key);
-		}
-		if (!y0Ready) {
-			requestY0Cache(chunkX, chunkZ, key);
-		}
+		try {
+			if (!viaReady) {
+				requestViaCache(chunkX, chunkZ, requestId);
+			}
+			if (!y0Ready) {
+				requestY0Cache(chunkX, chunkZ, requestId);
+			}
 
-		scheduleTimeout(key);
+			scheduleTimeout(requestId, q);
+		} catch (Throwable error) {
+			removeAndFail(requestId, q, error);
+		}
 	}
 
 	private void handleBlockChange(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise) throws Exception {
@@ -172,151 +210,198 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 	private void resolveViaDataOnRegionThread(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
 											  World world, int chunkX, int chunkZ,
 											  java.util.concurrent.Callable<byte[]> supplier) {
-		ByteBuf retained = buf.retain();
-		SchedulerCompat.runRegion(viaBlocks.plugin.plugin, world, chunkX, chunkZ, () -> {
-			byte[] data = null;
-			try {
-				if (player.isOnline() && isViaActive()) {
-					data = supplier.call();
-				}
-			} catch (Exception ignored) {
-			}
-			final byte[] resolvedData = data;
-
-			ChannelHandlerContext currentCtx = this.ctx != null ? this.ctx : ctx;
-			currentCtx.channel().eventLoop().execute(() -> {
-				try {
-					retained.resetReaderIndex();
-					if (resolvedData != null && resolvedData.length > 0) {
-						writeWithViaOnly(currentCtx, retained, promise, resolvedData);
-					} else {
-						currentCtx.write(retained, promise);
-					}
-				} catch (Exception ignored) {
-				} finally {
-					if (retained.refCnt() > 0) {
-						retained.release();
-					}
-				}
-			});
-		});
+		// The region task may run synchronously, so only the first claimant may write or release the
+		// packet. Every other path must leave the buffer alone.
+		PacketOwnership packet = new PacketOwnership(buf, promise);
+		dispatchOrFail(packet, () -> SchedulerCompat.runRegion(viaBlocks.plugin.plugin, world, chunkX, chunkZ,
+			() -> writeResolvedViaData(ctx, packet, resolveQuietly(supplier))));
 	}
 
-	private void requestViaCache(int cx, int cz, long key) {
-		SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
-			if (!player.isOnline()) {
-				release(key);
-				return;
-			}
-			viaBlocks.cacheChunkWithCallback(player.getWorld(), cx, cz, data -> {
-				QueuedPacket q = queue.get(key);
-				if (q != null) {
-					q.viaData = data;
-					q.viaReady = true;
-					tryRelease(key);
-				}
-			});
-		});
-	}
-
-	private void requestY0Cache(int cx, int cz, long key) {
-		SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
-			if (!player.isOnline()) {
-				release(key);
-				return;
-			}
-			y0.cacheChunkWithCallback(player, cx, cz, data -> {
-				QueuedPacket q = queue.get(key);
-				if (q != null) {
-					q.y0Data = data;
-					q.y0Ready = true;
-					tryRelease(key);
-				}
-			});
-		});
-	}
-
-	private void tryRelease(long key) {
-		QueuedPacket q = queue.get(key);
-		if (q != null && q.viaReady && q.y0Ready) {
-			release(key);
+	/** Runs a scheduling step, failing the packet when the step throws before anything claimed it. */
+	private static void dispatchOrFail(PacketOwnership packet, Runnable step) {
+		try {
+			step.run();
+		} catch (Throwable error) {
+			packet.failIfUnclaimed(error);
 		}
 	}
 
-	private void release(long key) {
-		QueuedPacket q = queue.remove(key);
+	private byte[] resolveQuietly(java.util.concurrent.Callable<byte[]> supplier) {
+		try {
+			return player.isOnline() && isViaActive() ? supplier.call() : null;
+		} catch (Exception ignored) {
+			return null;
+		}
+	}
+
+	private void writeResolvedViaData(ChannelHandlerContext ctx, PacketOwnership packet, byte[] viaData) {
+		ChannelHandlerContext currentCtx = this.ctx != null ? this.ctx : ctx;
+		dispatchOrFail(packet, () -> currentCtx.channel().eventLoop()
+			.execute(() -> writeClaimed(currentCtx, packet, viaData)));
+	}
+
+	/** Runs on the event loop, so it fails the packet itself instead of letting the throw escape. */
+	private void writeClaimed(ChannelHandlerContext ctx, PacketOwnership packet, byte[] viaData) {
+		if (!packet.claim()) {
+			return;
+		}
+		try {
+			packet.buf.resetReaderIndex();
+			writeWithData(ctx, packet.buf, packet.promise, viaData, null);
+		} catch (Throwable error) {
+			failAndRelease(packet.buf, packet.promise, error);
+		}
+	}
+
+	void requestViaCache(int cx, int cz, long requestId) {
+		requestCacheOnRegionThread(cx, cz, requestId, () ->
+			viaBlocks.cacheChunkWithCallback(player.getWorld(), cx, cz, data -> completeViaCache(requestId, data)));
+	}
+
+	private void requestY0Cache(int cx, int cz, long requestId) {
+		requestCacheOnRegionThread(cx, cz, requestId, () ->
+			y0.cacheChunkWithCallback(player, cx, cz, data -> completeY0Cache(requestId, data)));
+	}
+
+	/** Runs a cache request on the chunk's region thread, writing the queued packet as-is if the player left. */
+	private void requestCacheOnRegionThread(int cx, int cz, long requestId, Runnable request) {
+		SchedulerCompat.runRegion(viaBlocks.plugin.plugin, player.getWorld(), cx, cz, () -> {
+			if (!player.isOnline()) {
+				dequeueAndWrite(requestId);
+				return;
+			}
+			request.run();
+		});
+	}
+
+	void completeViaCache(long requestId, byte[] data) {
+		completeCache(requestId, q -> {
+			q.viaData = data;
+			q.viaReady = true;
+		});
+	}
+
+	void completeY0Cache(long requestId, byte[] data) {
+		completeCache(requestId, q -> {
+			q.y0Data = data;
+			q.y0Ready = true;
+		});
+	}
+
+	private void completeCache(long requestId, java.util.function.Consumer<QueuedPacket> apply) {
+		QueuedPacket q = queue.get(requestId);
 		if (q == null) return;
+		apply.accept(q);
+		tryDequeueAndWrite(requestId);
+	}
 
-		if (ctx != null && ctx.channel().isOpen()) {
-			ctx.channel().eventLoop().execute(() -> {
-				try {
-					writeWithData(ctx, q.buf, q.promise, q.viaData, q.y0Data);
-				} catch (Exception e) {
-				} finally {
-					if (q.buf.refCnt() > 0) {
-						q.buf.release();
-					}
-				}
-			});
-		} else {
-			if (q.buf.refCnt() > 0) {
-				q.buf.release();
-			}
+	private void tryDequeueAndWrite(long requestId) {
+		QueuedPacket q = queue.get(requestId);
+		if (q != null && q.viaReady && q.y0Ready) {
+			dequeueAndWrite(requestId);
 		}
 	}
 
-	private void scheduleTimeout(long key) {
+	private void dequeueAndWrite(long requestId) {
+		QueuedPacket q = queue.remove(requestId);
+		if (q == null) return;
+		writeQueuedPacket(q);
+	}
+
+	private void writeQueuedPacket(QueuedPacket q) {
+		if (ctx != null && ctx.channel().isOpen()) {
+			try {
+				ctx.channel().eventLoop().execute(() -> writeWithData(ctx, q.buf, q.promise, q.viaData, q.y0Data));
+			} catch (Throwable error) {
+				failAndRelease(q, error);
+			}
+		} else {
+			failAndRelease(q, new ClosedChannelException());
+		}
+	}
+
+	private void scheduleTimeout(long requestId, QueuedPacket q) {
 		if (ctx != null) {
 			ctx.channel().eventLoop().schedule(() -> {
-				QueuedPacket q = queue.get(key);
-				if (q != null && System.currentTimeMillis() - q.time >= TIMEOUT_MS) {
-					release(key);
+				if (queue.remove(requestId, q)) {
+					writeQueuedPacket(q);
 				}
-			}, TIMEOUT_MS, TimeUnit.MILLISECONDS);
+			}, timeoutMs, TimeUnit.MILLISECONDS);
 		}
 	}
 
-	private void writeWithData(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
-						byte[] viaData, byte[] y0Data) throws Exception {
+	void writeWithData(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
+						byte[] viaData, byte[] y0Data) {
 		boolean hasVia = viaData != null && viaData.length > 0;
 		boolean hasY0 = y0Data != null && y0Data.length > 0;
 
 		if (!hasVia && !hasY0) {
-			ctx.write(buf, promise);
+			writeOriginal(ctx, buf, promise);
 			return;
 		}
 
-		int totalSize = buf.readableBytes();
-		if (hasVia) totalSize += viaData.length;
-		if (hasY0) totalSize += 4 + 4 + y0Data.length; // 4 bytes for Int magic, 4 bytes for length
+		ByteBuf bufOut = null;
+		try {
+			int totalSize = buf.readableBytes();
+			if (hasVia) totalSize += viaData.length;
+			if (hasY0) totalSize += 4 + 4 + y0Data.length; // 4 bytes for Int magic, 4 bytes for length
 
-		ByteBuf bufOut = ctx.alloc().buffer(totalSize);
-		bufOut.writeBytes(buf);
+			bufOut = ctx.alloc().buffer(totalSize);
+			bufOut.writeBytes(buf);
 
-		if (hasVia) {
-			bufOut.writeBytes(viaData);
+			if (hasVia) {
+				bufOut.writeBytes(viaData);
+			}
+
+			if (hasY0) {
+				bufOut.writeInt(0x59304348);
+				bufOut.writeInt(y0Data.length);
+				bufOut.writeBytes(y0Data);
+			}
+
+			// Hand ownership to ctx.write before calling it: a synchronous rejection releases the
+			// message itself, so the cleanup below must no longer see the buffer.
+			ByteBuf toWrite = bufOut;
+			bufOut = null;
+			ctx.write(toWrite, promise);
+		} catch (Throwable error) {
+			promise.tryFailure(error);
+		} finally {
+			releaseIfLive(bufOut);
+			releaseIfLive(buf);
 		}
-
-		if (hasY0) {
-			bufOut.writeInt(0x59304348);
-			bufOut.writeInt(y0Data.length);
-			bufOut.writeBytes(y0Data);
-		}
-
-		ctx.write(bufOut, promise);
 	}
 
-	private void writeWithViaOnly(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise,
-								  byte[] data) throws Exception {
-		ByteBuf bufOut = ctx.alloc().buffer(buf.readableBytes()+data.length);
-		bufOut.writeBytes(buf);
-		bufOut.writeBytes(data);
-
-		ctx.write(bufOut, promise);
+	private void writeOriginal(ChannelHandlerContext ctx, ByteBuf buf, ChannelPromise promise) {
+		try {
+			ctx.write(buf, promise);
+		} catch (Throwable error) {
+			// ctx.write already released the message when it rejected it synchronously, so the
+			// release below is skipped by the reference count guard.
+			failAndRelease(buf, promise, error);
+		}
 	}
 
-	private long key(int x, int z) {
-		return ((long) x << 32) | (z & 0xFFFFFFFFL);
+	private void removeAndFail(long requestId, QueuedPacket q, Throwable error) {
+		if (queue.remove(requestId, q)) {
+			failAndRelease(q, error);
+		}
+	}
+
+	private static void failAndRelease(QueuedPacket q, Throwable error) {
+		failAndRelease(q.buf, q.promise, error);
+	}
+
+	private static void failAndRelease(ByteBuf buf, ChannelPromise promise, Throwable error) {
+		releaseIfLive(buf);
+		promise.tryFailure(error);
+	}
+
+	/** Releases a buffer this handler still owns. Buffers already handed off or freed are left alone. */
+	private static void releaseIfLive(ByteBuf buf) {
+		if (buf != null && buf.refCnt() > 0) {
+			ReferenceCountUtil.safeRelease(buf);
+		}
 	}
 
 	private int readVarInt(ByteBuf buf) {
@@ -393,11 +478,8 @@ public class ChunkHandler extends ChannelOutboundHandlerAdapter {
 
 	@Override
 	public void handlerRemoved(ChannelHandlerContext ctx) {
-		for (QueuedPacket q : queue.values()) {
-			if (q.buf.refCnt() > 0) {
-				q.buf.release();
-			}
+		for (Map.Entry<Long, QueuedPacket> entry : queue.entrySet()) {
+			removeAndFail(entry.getKey(), entry.getValue(), new ClosedChannelException());
 		}
-		queue.clear();
 	}
 }
