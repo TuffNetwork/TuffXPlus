@@ -31,7 +31,7 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.1'
     implementation 'org.java-websocket:Java-WebSocket:1.6.0'
 
-    compileOnly 'io.netty:netty-all:4.2.16.Final'
+    compileOnly 'io.netty:netty-all:4.2.17.Final'
     compileOnly 'it.unimi.dsi:fastutil:8.5.19'
 
     compileOnly 'com.viaversion:viabackwards:5.11.0'
@@ -46,7 +46,7 @@ dependencies {
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:6.1.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:6.1.2'
     testRuntimeOnly 'org.spigotmc:spigot-api:1.18.2-R0.1-SNAPSHOT'
-    testRuntimeOnly 'io.netty:netty-all:4.2.16.Final'
+    testRuntimeOnly 'io.netty:netty-all:4.2.17.Final'
     testRuntimeOnly 'it.unimi.dsi:fastutil:8.5.19'
     testRuntimeOnly 'com.viaversion:viaversion:5.11.0'
     testRuntimeOnly 'com.viaversion:viabackwards:5.11.0'
