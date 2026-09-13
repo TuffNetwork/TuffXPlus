@@ -6,7 +6,6 @@ on:
 jobs:
   auto_approve:
     runs-on: ubuntu-latest
-    # REPLACE 'skip-review' with your exact tag or label name
     if: contains(github.event.pull_request.labels.*.name, 'dependencies')
     
     permissions:
