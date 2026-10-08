@@ -3,12 +3,13 @@ package tf.tuff.viablocks;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import javax.annotation.Nonnull;
 
@@ -53,10 +54,18 @@ public class CustomBlockListener {
 	private static final long Y_MASK = (1L << 12) - 1L;
 	private static final int Z_SHIFT = 12;
 	private static final int X_SHIFT = 12 + 26;
-	private final Map<UUID, Map<Integer, List<Long>>> pendingUpdates = new HashMap<>();
-	private final Set<UUID> pendingFlush = new HashSet<>();
+	private final Map<UUID, PendingBatch> pendingUpdates = new ConcurrentHashMap<>();
 	private static final double UPDATE_RADIUS_SQUARED = 6400;
 	private static final @Nonnull byte[] EMPTY_PACKET = new byte[0];
+
+	private static final class PendingBatch {
+		final Map<Integer, List<Long>> updates = new HashMap<>();
+		final AtomicBoolean flushScheduled = new AtomicBoolean();
+
+		void add(int stateId, long location) {
+			updates.computeIfAbsent(stateId, ignored -> new ArrayList<>()).add(location);
+		}
+	}
 
 	private final Cache<BlockData, Integer> blockDataIdCache;
 	private final Cache<String, byte[]> chunkPacketCache;
@@ -185,7 +194,6 @@ public class CustomBlockListener {
 
 		UUID playerId = event.getPlayer().getUniqueId();
 		pendingUpdates.remove(playerId);
-		pendingFlush.remove(playerId);
 		plugin.viaBlocksEnabledPlayers.remove(playerId);
 		plugin.setPlayerEnabled(event.getPlayer(), false);
 	}
@@ -549,31 +557,24 @@ public class CustomBlockListener {
 	private void sendPacket(Player player, int stateId, Location location) {
 		if (!player.isOnline()) return;
 		UUID playerId = player.getUniqueId();
-		Map<Integer, List<Long>> updateData = pendingUpdates.get(playerId);
-		if (updateData == null) {
-			updateData = new HashMap<>();
-			pendingUpdates.put(playerId, updateData);
-		}
-		List<Long> stateList = updateData.get(stateId);
-		if (stateList == null) {
-			stateList = new ArrayList<>();
-			updateData.put(stateId, stateList);
-		}
-		stateList.add(packLocation(location));
-		if (pendingFlush.add(playerId)) {
-			SchedulerCompat.runEntityLater(player, plugin.plugin, () -> flushPendingUpdates(playerId), plugin.getUpdateBatchDelayTicks());
+		PendingBatch batch = pendingUpdates.compute(playerId, (ignored, pending) -> {
+			PendingBatch current = pending != null ? pending : new PendingBatch();
+			current.add(stateId, packLocation(location));
+			return current;
+		});
+		if (batch.flushScheduled.compareAndSet(false, true)) {
+			SchedulerCompat.runEntityLater(player, plugin.plugin,
+				() -> flushPendingUpdates(playerId, batch), plugin.getUpdateBatchDelayTicks());
 		}
 	}
 
-	private void flushPendingUpdates(UUID playerId) {
-		Map<Integer, List<Long>> updateData = pendingUpdates.remove(playerId);
-		pendingFlush.remove(playerId);
-		if (updateData == null || updateData.isEmpty()) return;
+	private void flushPendingUpdates(UUID playerId, PendingBatch batch) {
+		if (!pendingUpdates.remove(playerId, batch) || batch.updates.isEmpty()) return;
 
 		Player player = plugin.plugin.getServer().getPlayer(playerId);
 		if (player == null || !player.isOnline()) return;
 
-		byte[] packetData = buildChunkPacket(updateData);
+		byte[] packetData = buildChunkPacket(batch.updates);
 		SchedulerCompat.sendPluginMessage(plugin.plugin, player, ViaBlocksPlugin.CLIENTBOUND_CHANNEL, packetData);
 	}
 
@@ -630,7 +631,6 @@ public class CustomBlockListener {
 	public void clearCache() {
 		blockDataIdCache.invalidateAll();
 		pendingUpdates.clear();
-		pendingFlush.clear();
 		chunkPacketCache.invalidateAll();
 		recentModernChanges.invalidateAll();
 	}
