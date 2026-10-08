@@ -26,7 +26,7 @@ repositories {
 dependencies {
     compileOnly 'org.spigotmc:spigot-api:1.18.2-R0.1-SNAPSHOT'
 
-    implementation 'com.github.retrooper:packetevents-spigot:2.13.0'
+    implementation 'com.github.retrooper:packetevents-spigot:2.14.0'
 
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.3'
     implementation 'org.java-websocket:Java-WebSocket:1.6.0'
