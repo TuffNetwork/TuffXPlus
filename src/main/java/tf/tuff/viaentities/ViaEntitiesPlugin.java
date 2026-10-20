@@ -3,9 +3,9 @@ package tf.tuff.viaentities;
 import tf.tuff.TuffX;
 import org.bukkit.entity.Player;
 
-import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 import tf.tuff.util.SchedulerCompat;
@@ -15,7 +15,7 @@ public final class ViaEntitiesPlugin {
 	public static final String CLIENTBOUND_CHANNEL = "viaentities:data";
 	public static final String SERVERBOUND_CHANNEL = "entities:handshake";
 
-	public final Set<UUID> viaEntitiesEnabledPlayers = new HashSet<>();
+	public final Set<UUID> viaEntitiesEnabledPlayers = ConcurrentHashMap.newKeySet();
 
 	static ViaEntitiesPlugin instance;
 
